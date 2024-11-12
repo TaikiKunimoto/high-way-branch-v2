@@ -5,6 +5,7 @@
 ------------------------------
 
 **各ファイルの開き方**  
+`cd config`  
 `netedit filename.net.xml`  
 `sumo-gui filename.sumocfg`  
 
