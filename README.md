@@ -4,9 +4,6 @@
 
 ------------------------------
 
-### SUMOメモ  
-nodとedgからnetが作られる（neteditを使っていない場合)  
-
 **各ファイルの開き方**  
 `netedit filename.net.xml`  
 `sumo-gui filename.sumocfg`  
@@ -26,3 +23,8 @@ SUMO-GUIの保存：File -> Save Configuration (`Ctrl + Shift + S`)
 **その他のファイル**  
 ・settings.sml：sumo-guiのdelayなどが記述される  
 ・add.xml：追加の交通オブジェクトや制御情報を記述  
+
+----------------------------
+
+### SUMOメモ  
+nodとedgからnetが作られる（neteditを使っていない場合)  
