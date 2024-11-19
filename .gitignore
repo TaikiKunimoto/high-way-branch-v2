@@ -1,9 +1,4 @@
-# .gitignore に以下を追加
 .venv/
 dist/
 *.pyc
 __pycache__/
-
-# 以下のファイルは Git で管理
-pyproject.toml
-poetry.lock
