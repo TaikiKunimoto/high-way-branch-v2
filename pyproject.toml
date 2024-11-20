@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "high-way-branch"
+version = "0.1.0"
+description = "2024 Research"
+authors = ["TaikiKunimoto <taiki416avicii@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+traci = "^1.21.0"
+eclipse-sumo = "^1.21.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
