@@ -8,7 +8,6 @@
     <input>
         <net-file value="high-way.net.xml"/>
         <route-files value="high-way.rou.xml"/>
-        <additional-files value="high-way.add.xml"/>
         <gui-settings-file value="high-way.settings.xml"/>
     </input>
 
