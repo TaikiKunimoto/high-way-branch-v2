@@ -8,6 +8,6 @@
     <vType id="CAV_1" accel="3.0" decel="5.0" maxSpeed="20.0" length="5"/>
 
     <!-- Routes -->
-    <route id="r_0" edges="MainLane0 MainLane1 MainLane2"/>
-    <route id="r_1" edges="MainLane0 MainLane1 Exit0 Exit1 Exit2"/>
+    <route id="r_pass" edges="MainLane0 MainLane1 MainLane2"/>
+    <route id="r_exit" edges="MainLane0 MainLane1 Exit0 Exit1 Exit2"/>
 </routes>
