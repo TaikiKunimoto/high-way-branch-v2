@@ -11,4 +11,10 @@
         <additional-files value="high-way.add.xml"/>
     </input>
 
+    <time>
+        <step-length value="0.1"/>
+        <begin value="0.0"/>
+        <end value="6000.0"/>
+    </time>
+
 </sumoConfiguration>
