@@ -1,6 +1,6 @@
 ## 実行方法
 1. `cd TraCI`  
-2. `python main.py`
+2. `poetry run python main.py`
 
 ------------------------------
 
