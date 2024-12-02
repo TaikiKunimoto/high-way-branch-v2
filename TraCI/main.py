@@ -8,7 +8,7 @@ import traci
 from func.cav import CAV
 from sumolib import checkBinary
 
-simulation_time = 60.0
+simulation_time = 120.0
 
 vehicle_instance = []
 veh_id = 0
@@ -89,7 +89,7 @@ def add_vehicle(alpha):
             typeID="CAV_0",
             departLane="best",
             departPos="base",
-            departSpeed="16.67",
+            departSpeed="20.00",
         )
         instance = CAV(veh_id, alpha, withAgree=True)
         vehicle_instance.append(instance)
@@ -103,7 +103,7 @@ def add_vehicle(alpha):
             typeID="CAV_1",
             departLane="best",
             departPos="base",
-            departSpeed="16.67",
+            departSpeed="20.00",
         )
         instance = CAV(veh_id, alpha, withAgree=True)
         vehicle_instance.append(instance)
