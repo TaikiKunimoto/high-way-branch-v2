@@ -8,7 +8,7 @@
     <input>
         <net-file value="high-way.net.xml"/>
         <route-files value="high-way.rou.xml"/>
-        <gui-settings-file value="high-way.settings.xml"/>
+        <gui-settings-file value="high-way.view.xml"/>
     </input>
 
     <time>

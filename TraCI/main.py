@@ -8,7 +8,7 @@ import traci
 from func.cav import CAV
 from sumolib import checkBinary
 
-simulation_time = 60.0
+simulation_time = 120.0
 
 vehicle_instance = []
 veh_id = 0
@@ -22,6 +22,70 @@ def run(alpha=0.0, inflow_0=750, inflow_1=750):
 
     while shouldContinueSimWithSimulationTime():
         traci.simulationStep()
+
+        arrived_list = traci.simulation.getArrivedIDList()
+        running_list = traci.vehicle.getIDList()
+        poplist = []
+
+        for index, ins in enumerate(vehicle_instance):
+            # シミュレーション範囲を出た車両をリスト化
+            if ins.id in arrived_list:
+                poplist.append(index)
+                continue
+            # 混雑でまだ道路に入れていない車両はパス
+            elif ins.id not in running_list:
+                continue
+        
+        # 自車両の情報（位置や速度）を更新
+            ins.updateStatus(running_list)
+            if ins.leadPath:
+                print(
+                    "\tvehid:",
+                    ins.id,
+                    "status",
+                    ins.status,
+                    "current speed",
+                    "{:.5g}".format(ins.speed),
+                    "route",
+                    ins.route,
+                    "road",
+                    ins.road,
+                    "leader",
+                    ins.leader,
+                    "pos x,y",
+                    "{:.5g}".format(ins.pos_x),
+                    "{:.5g}".format(ins.pos_y),
+                    "leadPath",
+                    ins.leadPath.pathID,
+                )
+            else:
+                print(
+                    "\tvehid:",
+                    ins.id,
+                    "status",
+                    ins.status,
+                    "current speed",
+                    "{:.5g}".format(ins.speed),
+                    "route",
+                    ins.route,
+                    "road",
+                    ins.road,
+                    "leader",
+                    ins.leader,
+                    "pos x,y",
+                    "{:.5g}".format(ins.pos_x),
+                    "{:.5g}".format(ins.pos_y),
+                )
+
+            # 車両の速度を更新
+            ins.executionDrive()
+
+        # 車両インスタンスを削除
+        if poplist:
+            for i in sorted(poplist, reverse=True):
+                vehicle_instance.pop(i)
+
+        # 車両の追加
         add_vehicle(alpha)
 
     traci.close()
@@ -69,7 +133,6 @@ def shouldContinueSimWithSimulationTime():
             sumo_time,
             "\nNow:",
             now,
-            # file=sys.stderr,
         )
     return True if sumo_time != simulation_time else False
 
@@ -89,7 +152,7 @@ def add_vehicle(alpha):
             typeID="CAV_0",
             departLane="best",
             departPos="base",
-            departSpeed="16.67",
+            departSpeed="27.00",
         )
         instance = CAV(veh_id, alpha, withAgree=True)
         vehicle_instance.append(instance)
@@ -103,7 +166,7 @@ def add_vehicle(alpha):
             typeID="CAV_1",
             departLane="best",
             departPos="base",
-            departSpeed="16.67",
+            departSpeed="27.00",
         )
         instance = CAV(veh_id, alpha, withAgree=True)
         vehicle_instance.append(instance)

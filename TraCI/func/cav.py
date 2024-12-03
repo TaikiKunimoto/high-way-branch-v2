@@ -1190,8 +1190,29 @@ class CAV:
 
         return best_change_path, best_straight_path
 
+    # TODO errorを治す
+
+    # 現在の道路の制限速度を確認し、必要に応じて速度を制限する
+    def checkSpeedLimit(self):
+        # 車両が有効なエッジ上にある場合のみ処理を行う
+        if self.road is None or self.road.startswith(":"):
+            return
+            # 現在のレーンの制限速度を取得 (m/s)
+        try:
+            current_lane = f"{self.road}_{self.lane}"
+            speed_limit = traci.lane.getMaxSpeed(current_lane)
+
+            # 現在の速度が制限速度を超えている場合
+            if self.speed > speed_limit:
+                # 急ブレーキを避けるため、徐々に減速
+                target_speed = min(self.speed * 0.9, speed_limit)
+                traci.vehicle.setSpeed(self.id, target_speed)
+        except:
+            pass
+
     # 予定経路に従い速度調整
     def executionDrive(self):
+        print("vehID:", self.id, "road:", self.road, "lane:", self.lane)
         if self.plannedPath:
             next_time = round(self.simTime + timeStep, 1)
             for i in range(len(self.plannedPath.t)):
@@ -1201,9 +1222,14 @@ class CAV:
                     dif_pos = np.sqrt(
                         (nextpos_x - self.pos_x) ** 2 + (nextpos_y - self.pos_y) ** 2
                     )
-                    next_speed = max(min(dif_pos / timeStep, maxSpeed), 0)
+                    # 制限速度を考慮した速度計算
+                    current_lane = f"{self.road}_{self.lane}"
+                    speed_limit = traci.lane.getMaxSpeed(current_lane)
+                    next_speed = max(min(dif_pos / timeStep, speed_limit), 0)
                     traci.vehicle.setSpeed(vehID=self.id, speed=next_speed)
                     break
+        # 毎ステップで制限速度をチェック
+        self.checkSpeedLimit()
 
     def getStatistics(self):
         return (
