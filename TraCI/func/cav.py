@@ -1204,8 +1204,8 @@ class CAV:
 
             # 現在の速度が制限速度を超えている場合
             if self.speed > speed_limit:
-                # 急ブレーキを避けるため、徐々に減速
-                target_speed = min(self.speed * 0.9, speed_limit)
+                # target_speed = min(self.speed * 0.9, speed_limit) # 急ブレーキを避けるため、徐々に減速
+                target_speed = speed_limit
                 traci.vehicle.setSpeed(self.id, target_speed)
         except:
             pass
