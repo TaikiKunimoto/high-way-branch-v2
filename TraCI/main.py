@@ -150,7 +150,7 @@ def add_vehicle(alpha):
             vehID=str(veh_id),
             routeID="r_pass",
             typeID="CAV_0",
-            departLane="best",
+            departLane="random",
             departPos="base",
             departSpeed="22",
         )
@@ -164,7 +164,7 @@ def add_vehicle(alpha):
             vehID=str(veh_id),
             routeID="r_exit",
             typeID="CAV_1",
-            departLane="best",
+            departLane="random",
             departPos="base",
             departSpeed="22",
         )
