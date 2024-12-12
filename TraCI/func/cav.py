@@ -47,8 +47,8 @@ class CAV:
     # constructor
     def __init__(self, vehID, alpha, withAgree=False):
         self.id = str(vehID)
-        # not allow autonomous lanechange
-        traci.vehicle.setLaneChangeMode(vehID=self.id, lcm=0b000000000000)
+        # 車両のデフォルトの車線変更モードを設定
+        traci.vehicle.setLaneChangeMode(vehID=self.id, lcm=0b011001010101)
         # control vehicle speed by traci
         traci.vehicle.setSpeedMode(vehID=self.id, sm=0b100000)
 
@@ -62,6 +62,7 @@ class CAV:
         self.typeID = traci.vehicle.getTypeID(self.id)
         self.route = traci.vehicle.getRouteID(self.id)
         self.road = None
+        self.laneID = traci.vehicle.getLaneID(self.id)
         self.lane = None
         self.status = None  # free, follow, stop, lanechange, turn, yield
 
@@ -124,6 +125,7 @@ class CAV:
         self.accel = min(traci.vehicle.getAcceleration(self.id), maxAccel)
         self.road = traci.vehicle.getRoadID(self.id)
         self.lane = traci.vehicle.getLaneIndex(self.id)
+        self.laneID = traci.vehicle.getLaneID(self.id)
 
         # leaderがシミュレーション範囲から出たらleaderを初期化
         if self.leader not in running_list:
@@ -1212,7 +1214,6 @@ class CAV:
 
     # 予定経路に従い速度調整
     def executionDrive(self):
-        print("vehID:", self.id, "road:", self.road, "lane:", self.lane)
         if self.plannedPath:
             next_time = round(self.simTime + timeStep, 1)
             for i in range(len(self.plannedPath.t)):
