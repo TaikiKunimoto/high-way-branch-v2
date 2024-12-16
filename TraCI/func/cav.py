@@ -105,9 +105,23 @@ class CAV:
         self.collision_counter = 0
         self.caution_counter = 0
 
-    # update own status every step
+        self.departure_time = None
+        self.arrival_time = None
+
+        self.speed_history = []
+
+    # 車輌の実際の出発時刻を取得
+    def get_departure_time(self):
+        self.departure_time = traci.vehicle.getDeparture(self.id)
+    
+    # 車輌の実際の到着時刻を取得
+    def get_arrival_time(self):
+        self.arrival_time = traci.simulation.getTime()
+
+    # 自身のステータスを更新
     def updateStatus(self, running_list):
         self.simTime = traci.simulation.getTime()
+        self.speed_history.append(traci.vehicle.getSpeed(self.id))
 
         # update own position
         pos = traci.vehicle.getPosition(self.id)
@@ -877,8 +891,8 @@ class CAV:
             cp = copy.deepcopy(self.alter_straight_path)
             central_path_server.append(cp)
 
+    # 通信範囲内の他車両の経路情報を受信
     def receiveMCM(self, central_path_server):
-        # 通信範囲内の他車両の経路情報を受信
         self.receivedPaths = [
             path
             for path in central_path_server
@@ -1193,7 +1207,6 @@ class CAV:
         return best_change_path, best_straight_path
 
     # TODO errorを治す
-
     # 現在の道路の制限速度を確認し、必要に応じて速度を制限する
     def checkSpeedLimit(self):
         # 車両が有効なエッジ上にある場合のみ処理を行う
