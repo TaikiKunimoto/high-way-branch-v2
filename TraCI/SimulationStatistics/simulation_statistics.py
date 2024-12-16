@@ -50,6 +50,24 @@ class SimulationStatistics:
     def _calculate_average_speed(self, vehicle_speed_data):
         return sum(vehicle_speed_data) / len(vehicle_speed_data)
 
+    # 公平性指標を計算
+    def _calculate_fairness_index(self, results):
+        overtake_count = 0
+        exit_order = {
+            veh_id: i for i, veh_id in enumerate(results["r_exit_exit_vehicle"])
+        }
+        departed_order = {
+            veh_id: i for i, veh_id in enumerate(results["r_exit_departed_vehicle"])
+        }
+
+        # 各車両について、出口を出た順番が入った順番より早い場合（追い越しが発生）
+        for veh_id in results["r_exit_exit_vehicle"]:
+            if exit_order[veh_id] < departed_order[veh_id]:
+                # その車両が追い越した台数を計算（順番の差分）
+                overtake_count += departed_order[veh_id] - exit_order[veh_id]
+
+        return overtake_count
+
     def _create_filename(self):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         return f"{self.output_dir}/simulation_results_{timestamp}.csv"
@@ -75,6 +93,7 @@ class SimulationStatistics:
             "average_speed",
             "average_r_pass_speed",
             "average_r_exit_speed",
+            "fairness_index",
         ]
         with open(self.filename, "w", newline="") as f:
             writer = csv.writer(f)
@@ -107,6 +126,7 @@ class SimulationStatistics:
             self._calculate_average_speed(self.vehcile_speed_data),
             self._calculate_average_speed(self.r_pass_vehicle_speed_data),
             self._calculate_average_speed(self.r_exit_vehicle_speed_data),
+            self._calculate_fairness_index(results),
         ]
 
         with open(self.filename, "a", newline="") as f:

@@ -20,6 +20,8 @@ departTime_r_exit = []
 vehicle_instance = []
 total_departed_vehicle = []
 exit_vehicle = []
+r_pass_departed_vehicle = []
+r_exit_departed_vehicle = []
 r_pass_exit_vehicle = []
 r_exit_exit_vehicle = []
 canceled_vehicle = []
@@ -79,6 +81,12 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
             if ins.id in departed_list:
                 ins.get_departure_time()
                 total_departed_vehicle.append(ins.id)
+
+                if ins.route == "r_pass":
+                    r_pass_departed_vehicle.append(ins.id)
+                elif ins.route == "r_exit":
+                    r_exit_departed_vehicle.append(ins.id)
+
                 if ins.id in canceled_vehicle:
                     canceled_vehicle.remove(ins.id)
 
@@ -107,6 +115,8 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
         "total_departed_vehicle": total_departed_vehicle,
         "running_vehicle": running_list,
         "exit_vehicle": exit_vehicle,
+        "r_pass_departed_vehicle": r_pass_departed_vehicle,
+        "r_exit_departed_vehicle": r_exit_departed_vehicle,
         "r_pass_exit_vehicle": r_pass_exit_vehicle,
         "r_exit_exit_vehicle": r_exit_exit_vehicle,
         "canceled_vehicle": canceled_vehicle,
