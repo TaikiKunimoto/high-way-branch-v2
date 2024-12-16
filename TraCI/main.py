@@ -99,6 +99,9 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
             # 車両の速度を更新
             ins.executionDrive()
 
+            print(ins.id, "lanePosition", traci.vehicle.getLanePosition(ins.id))
+            print("lcm", traci.vehicle.getLaneChangeMode(ins.id))
+
         # 車両インスタンスを削除
         if poplist:
             for i in sorted(poplist, reverse=True):

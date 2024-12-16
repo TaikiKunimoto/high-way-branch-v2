@@ -34,7 +34,7 @@ tau = 1.5  # safe headway time [s]
 PET_th = 3.0  # safe PET [s]
 yield_th = 0.0  # threshold whether to yield
 
-mergeStartPos = 150
+mergeStartPos = 1100  # [m] 単純な手法の場合の車線変更開始地点(1500 - x)
 all_follow_Range = False
 follow_range = 200
 collision_distance = 3.0
@@ -48,7 +48,8 @@ class CAV:
     def __init__(self, vehID, alpha, withAgree=False):
         self.id = str(vehID)
         # 車両のデフォルトの車線変更モードを設定
-        traci.vehicle.setLaneChangeMode(vehID=self.id, lcm=0b011001010101)
+        # デフォルトでは車線変更を許可しない
+        traci.vehicle.setLaneChangeMode(vehID=self.id, lcm=0b000000000000)
         # control vehicle speed by traci
         traci.vehicle.setSpeedMode(vehID=self.id, sm=0b100000)
 
@@ -113,7 +114,7 @@ class CAV:
     # 車輌の実際の出発時刻を取得
     def get_departure_time(self):
         self.departure_time = traci.vehicle.getDeparture(self.id)
-    
+
     # 車輌の実際の到着時刻を取得
     def get_arrival_time(self):
         self.arrival_time = traci.simulation.getTime()
@@ -122,6 +123,12 @@ class CAV:
     def updateStatus(self, running_list):
         self.simTime = traci.simulation.getTime()
         self.speed_history.append(traci.vehicle.getSpeed(self.id))
+
+        # 車線変更が可能なポイントを通過したら車線変更を可能にする
+        if self.hasPassedLaneChangePoint():
+            traci.vehicle.setLaneChangeMode(
+                vehID=self.id, laneChangeMode=0b011001010101
+            )
 
         # update own position
         pos = traci.vehicle.getPosition(self.id)
@@ -226,6 +233,12 @@ class CAV:
         self.count_send_PT = 0
         self.count_send_DT = 0
         self.count_send_AT = 0
+
+    # 車線変更が可能なポイントを通過したら車線変更を実行
+    def hasPassedLaneChangePoint(self):
+        if traci.vehicle.getLanePosition(self.id) > mergeStartPos:
+            return True
+        return False
 
     # 現在の道路の制限速度を確認し、必要に応じて速度を制限する
     def checkSpeedLimit(self):
