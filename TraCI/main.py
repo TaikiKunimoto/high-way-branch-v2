@@ -8,7 +8,7 @@ import traci
 from func.cav import CAV
 from sumolib import checkBinary
 
-simulation_time = 800.0
+simulation_time = 900.0  # 15min
 
 veh_id = 0
 alpha = 0.0
@@ -56,6 +56,7 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
                     canceled_vehicle.append(ins.id)
                 continue
 
+            # シミュレーション範囲に入った車両をリスト化し、キャンセルリストから削除
             if ins.id in departed_list:
                 total_departed_vehicle.append(ins.id)
                 if ins.id in canceled_vehicle:
@@ -65,12 +66,7 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
             ins.updateStatus(running_list)
 
             # Laneごとのキューから車両を削除
-            if ins.id in lane0_queue:
-                lane0_queue.remove(ins.id)
-            elif ins.id in lane1_queue:
-                lane1_queue.remove(ins.id)
-            elif ins.id in lane2_queue:
-                lane2_queue.remove(ins.id)
+            updateLaneQueue(ins.id)
 
             # if ins.leadPath:
             #     print(
@@ -125,25 +121,7 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
         # 車両の追加
         add_vehicle(alpha)
 
-    # 生成された車輌インスタンスの数
-    print("vehicle_instance Length", veh_id + 1)
-
-    # 最後まで環境に残っている車輌の数
-    print("running_list Length", len(running_list))
-
-    # シミュレーション中に正常に終了した車両の数
-    print("exit_vehicle Length", len(exit_vehicle))
-
-    # シミュレーションに入った車輌の数
-    print("total_departed_vehicle Length", len(total_departed_vehicle))
-
-    # シミュレーション中に混雑で道路に入れなかった車両の数
-    print("canceled_vehicle Length", len(canceled_vehicle))
-
-    print("lane0_queue Length", len(lane0_queue))
-    print("lane1_queue Length", len(lane1_queue))
-    print("lane2_queue Length", len(lane2_queue))
-
+    printSImulationInfoAtEnd(running_list)
     traci.close()
 
 
@@ -172,6 +150,39 @@ def set_environment(inflow_pass: int, inflow_exit: int):
 
     print("deparTime_r_pass", departTime_r_pass)
     print("departTime_r_exit", departTime_r_exit)
+
+
+def printSImulationInfoAtEnd(running_list):
+    print("=====================================")
+    print("simulation end")
+
+    # 生成された車輌インスタンスの数
+    print("vehicle_instance Length :", veh_id + 1)
+    # 最後までシミュレーション内部に残っている車輌の数
+    print("running_list Length :", len(running_list))
+    # シミュレーション中に正常に終了した車両の数
+    print("exit_vehicle Length :", len(exit_vehicle))
+    # シミュレーションに入った車輌の数
+    print("total_departed_vehicle Length :", len(total_departed_vehicle))
+    # １時間あたりの交通量
+    print(f"traffic volume: {len(total_departed_vehicle) * (3600 / simulation_time)} pcu/h")
+    # シミュレーション中に混雑で道路に入れなかった車両の数
+    print("canceled_vehicle Length :", len(canceled_vehicle))
+    # シミュレーション終了時の各レーンのキューの長さ
+    print("lane0_queue Length :", len(lane0_queue))
+    print("lane1_queue Length :", len(lane1_queue))
+    print("lane2_queue Length :", len(lane2_queue))
+
+    print("=====================================")
+
+
+def updateLaneQueue(id: str):
+    if id in lane0_queue:
+        lane0_queue.remove(id)
+    elif id in lane1_queue:
+        lane1_queue.remove(id)
+    elif id in lane2_queue:
+        lane2_queue.remove(id)
 
 
 # 車輌が侵入するレーンをランダムに決定
@@ -296,7 +307,7 @@ if __name__ == "__main__":
     # コマンドライン引数を取得
     options = get_options()
     args = sys.argv
-    alpha = str(args[1])  #
+    alpha = str(args[1])  #現在は使用していない
     seed = args[2]  # 乱数のシード(等しいseedで実行すると同じ結果が得られる)
     random.seed(seed)
     inflow_pass = int(args[3])  # 車両の流入数 pass
