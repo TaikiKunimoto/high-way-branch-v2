@@ -13,8 +13,6 @@ if "SUMO_HOME" in os.environ:
 else:
     sys.exit("please declare environment variable 'SUMO_HOME'")
 import traci  # noqa
-from PathPlanning.FrenetOptimalTrajectory.frenet_merge import (
-    emergency_stop, generate_frenet_frame)
 
 maxSpeed = 27  # [m/s]
 maxAccel = 3.0  # [m/ss]
@@ -140,49 +138,13 @@ class CAV:
             traci.vehicle.getSpeed(self.leader[0]) if self.leader is not None else None
         )
 
-    # 車線変更が可能なポイントを通過したら車線変更を実行
+    # 車線変更が可能なポイントを通過したかどうか
     def hasPassedLaneChangePoint(self):
         if traci.vehicle.getLanePosition(self.id) > mergeStartPos:
             return True
         return False
 
-    # 車輌の速度を調整
-    def controlSpeed(self):
-        # 車両が有効なエッジ上にある場合のみ処理を行う
-        if self.road is None or self.road.startswith(":"):
-            return
-
-        current_lane = f"{self.road}_{self.lane}"
-        speed_limit = traci.lane.getMaxSpeed(current_lane)
-
-        min_duration = abs(speed_diff) / maxDecel
-        safe_duration = min_duration + 1  # 安全マージンを追加
-
-        if self.leader is None:
-            if self.speed < speed_limit:
-                traci.vehicle.slowDown(self.id, speed_limit, safe_duration)
-                return
-            return
-        else:
-            leader_id, distance = self.leader
-            leader_speed = traci.vehicle.getSpeed(leader_id)
-            speed_diff = self.speed - leader_speed
-
-            if speed_diff > 0:
-                stop_distance = self.speed**2 / (2 * abs(maxDecel))
-
-                if distance <= stop_distance:
-                    self.emergencyBreak(leader_speed)
-                    return
-
-                target_speed = min(speed_limit, leader_speed)
-                target_speed_diff = target_speed - self.speed
-
-                if target_speed_diff < 0:
-                    min_duration = abs(target_speed_diff) / abs(maxDecel)
-                    safe_duration = min_duration * 1.1  # 安全マージンを追加
-                    traci.vehicle.slowDown(self.id, target_speed, safe_duration)
-
+    # 車両の速度を調整
     def controlSpeed(self):
         # 無効な道路上の場合は制御しない
         if self.road is None or self.road.startswith(":"):
@@ -232,15 +194,3 @@ class CAV:
     def emergencyBreak(self, targetSpeed):
         stats.increment_emergency_brake()
         traci.vehicle.slowDown(self.id, targetSpeed, 0.1)
-
-    def excutionDrive(self):
-        if self.road is None or self.road.startswith(":"):
-            return
-        try:
-            current_lane = f"{self.road}_{self.lane}"
-            speed_limit = traci.lane.getMaxSpeed(current_lane)
-            if self.speed > speed_limit:
-                target_speed = speed_limit
-                traci.vehicle.setSpeed(self.id, target_speed)
-        except:
-            pass

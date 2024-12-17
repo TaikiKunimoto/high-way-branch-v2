@@ -97,7 +97,6 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
             _updateLaneQueue(ins.id)
 
             # 車両の速度を更新
-            # ins.excutionDrive()
             ins.controlSpeed()
 
             # TTCを計算
