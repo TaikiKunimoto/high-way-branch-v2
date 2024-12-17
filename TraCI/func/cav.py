@@ -5,6 +5,7 @@ import sys
 from re import S
 
 import numpy as np
+from SimulationStatistics.simulation_statistics import SimulationStatistics
 
 if "SUMO_HOME" in os.environ:
     tools = os.path.join(os.environ["SUMO_HOME"], "tools")
@@ -13,34 +14,19 @@ else:
     sys.exit("please declare environment variable 'SUMO_HOME'")
 import traci  # noqa
 from PathPlanning.FrenetOptimalTrajectory.frenet_merge import (
-    emergency_stop,
-    generate_frenet_frame,
-)
+    emergency_stop, generate_frenet_frame)
 
-maxSpeed = 16.67  # [m/s]
+maxSpeed = 27  # [m/s]
 maxAccel = 3.0  # [m/ss]
 maxDecel = -5.0  # [m/ss]
-sensorRange = 200  # [m]
-commRange = 200  # [m]
 maxPathLen = 10.0  # max path time [s]
 LANE_WIDTH = 3.2  # [m]
 
 timeStep = 0.1  # [s]
-predTime = 10.0  # [s]
-pathValidTime = 1.0  # [s]
-
-D_0 = 5.0  # longitudinal safe margin [m]
-tau = 1.5  # safe headway time [s]
-PET_th = 3.0  # safe PET [s]
-yield_th = 0.0  # threshold whether to yield
 
 mergeStartPos = 1100  # [m] 単純な手法の場合の車線変更開始地点(1500 - x)
-all_follow_Range = False
-follow_range = 200
-collision_distance = 3.0
-caution_distance = 6.0
-consider_3s_later = False
-divide_DT = False
+
+stats = SimulationStatistics()
 
 
 class CAV:
@@ -48,8 +34,10 @@ class CAV:
     def __init__(self, vehID, alpha, withAgree=False):
         self.id = str(vehID)
         # 車両のデフォルトの車線変更モードを設定
-        # デフォルトでは車線変更を許可しない
         traci.vehicle.setLaneChangeMode(vehID=self.id, lcm=0b000000000000)
+        # traci.vehicle.setLaneChangeMode(vehID=self.id, lcm=0b000000010100)
+        # traci.vehicle.setLaneChangeMode(vehID=self.id, lcm=0b000000010000)
+
         # control vehicle speed by traci
         traci.vehicle.setSpeedMode(vehID=self.id, sm=0b100000)
 
@@ -66,6 +54,8 @@ class CAV:
         self.laneID = traci.vehicle.getLaneID(self.id)
         self.lane = None
         self.status = None  # free, follow, stop, lanechange, turn, yield
+        self.distance = None  # 前方車両との距離
+        self.leader_speed = None  # 前方車両の速度
 
         self.pos_x = 0
         self.pos_y = 0
@@ -105,6 +95,7 @@ class CAV:
 
         self.collision_counter = 0
         self.caution_counter = 0
+        self.emergency_brake_counter = 0
 
         self.departure_time = None
         self.arrival_time = None
@@ -120,14 +111,14 @@ class CAV:
         self.arrival_time = traci.simulation.getTime()
 
     # 自身のステータスを更新
-    def updateStatus(self, running_list):
+    def updateStatus(self):
         self.simTime = traci.simulation.getTime()
         self.speed_history.append(traci.vehicle.getSpeed(self.id))
 
         # 車線変更が可能なポイントを通過したら車線変更を可能にする
         if self.hasPassedLaneChangePoint():
             traci.vehicle.setLaneChangeMode(
-                vehID=self.id, laneChangeMode=0b011001010101
+                vehID=self.id, laneChangeMode=0b011000010101
             )
 
         # update own position
@@ -135,104 +126,19 @@ class CAV:
         self.pos_x = pos[0]
         self.pos_y = pos[1]
 
-        if self.plannedPath:
-            for i in range(len(self.plannedPath.t)):
-                if self.plannedPath.t[i] == self.simTime:
-                    self.pos_x = self.plannedPath.x[i]
-                    self.pos_y = self.plannedPath.y[i]
-
         self.angle = traci.vehicle.getAngle(self.id)
         self.speed = min(traci.vehicle.getSpeed(self.id), maxSpeed)
         self.accel = min(traci.vehicle.getAcceleration(self.id), maxAccel)
         self.road = traci.vehicle.getRoadID(self.id)
         self.lane = traci.vehicle.getLaneIndex(self.id)
         self.laneID = traci.vehicle.getLaneID(self.id)
-
-        # leaderがシミュレーション範囲から出たらleaderを初期化
-        if self.leader not in running_list:
-            self.leader = None
-            self.leadPath = None
-
-        # 車線変更が完了したらlanechange状態を解除
-        if self.status == "lanechange" and self.pos_y == self.plannedPath.y[-1]:
-            self.status = None
-
-        elif self.status == "yield":  # 譲った相手が車線変更をしたらyield状態を解除
-            if self.lane == traci.vehicle.getLaneIndex(self.leader):
-                self.status = None
-                self.leader = None
-                self.leadPath = None
-                self.isPathValid = False
-
-        # update own status
-        ld = traci.vehicle.getLeader(self.id)
-        if ld:
-            if self.status == "yield":
-                leadPath = [
-                    path
-                    for path in self.receivedPaths
-                    if path.vehID == self.leader and path.isLaneChange == True
-                ]
-                if leadPath:
-                    self.leadPath = leadPath[0]
-
-                if self.leader == ld[0]:
-                    self.status = "follow"
-
-            elif (self.pos_x - traci.vehicle.getPosition(ld[0])[0]) ** 2 + (
-                self.pos_y - traci.vehicle.getPosition(ld[0])[1]
-            ) ** 2 <= sensorRange**2 and traci.vehicle.getRoadID(ld[0]):
-                self.leader = ld[0]
-                leadPath = [
-                    path
-                    for path in self.receivedPaths
-                    if path.vehID == self.leader and path.type == "planned"
-                ]
-                if leadPath:
-                    if (
-                        self.leadPath
-                        and self.leadPath.pathID != leadPath[0].pathID
-                        and self.status not in ["yield", "turn"]
-                    ):
-                        # 直前の予定経路が変更された場合、自身の経路も合わせて再設定
-                        self.isPathValid = False
-                    self.leadPath = leadPath[0]
-
-                # 前方車両が車線変更中の場合は、さらに一つ前の車両に追従する
-                if (
-                    self.leadPath
-                    and self.plannedPath
-                    and self.leadPath.isLaneChange
-                    and (self.plannedPath.y[-1] != self.leadPath.y[-1])
-                ):
-                    ld = traci.vehicle.getLeader(self.leadPath.vehID)
-                    self.leader = ld[0]
-
-        elif ld is None:
-            if self.status not in ["yield", "lanechange"]:
-                self.leader = None
-                self.status = "free"
-
-        # set leading path
-        if self.leader:
-            leadPath = [
-                path
-                for path in self.receivedPaths
-                if path.vehID == self.leader and path.type == "planned"
-            ]
-            if leadPath:
-                leadPath = leadPath[0]
-            else:
-                self.leadPath = None
-        else:
-            self.leadPath = None
-
-        self.count_accept_utility = 0
-        self.count_refuse_utility = 0
-        self.count_refuse_physics = 0
-        self.count_send_PT = 0
-        self.count_send_DT = 0
-        self.count_send_AT = 0
+        self.leader = traci.vehicle.getLeader(
+            self.id, 0
+        )  # 0 にすると制動距離より短い距離の先行車を取得
+        self.distance = self.leader[1] if self.leader is not None else None
+        self.leader_speed = (
+            traci.vehicle.getSpeed(self.leader[0]) if self.leader is not None else None
+        )
 
     # 車線変更が可能なポイントを通過したら車線変更を実行
     def hasPassedLaneChangePoint(self):
@@ -240,40 +146,101 @@ class CAV:
             return True
         return False
 
-    # 現在の道路の制限速度を確認し、必要に応じて速度を制限する
-    def checkSpeedLimit(self):
+    # 車輌の速度を調整
+    def controlSpeed(self):
         # 車両が有効なエッジ上にある場合のみ処理を行う
         if self.road is None or self.road.startswith(":"):
             return
-            # 現在のレーンの制限速度を取得 (m/s)
+
+        current_lane = f"{self.road}_{self.lane}"
+        speed_limit = traci.lane.getMaxSpeed(current_lane)
+
+        min_duration = abs(speed_diff) / maxDecel
+        safe_duration = min_duration + 1  # 安全マージンを追加
+
+        if self.leader is None:
+            if self.speed < speed_limit:
+                traci.vehicle.slowDown(self.id, speed_limit, safe_duration)
+                return
+            return
+        else:
+            leader_id, distance = self.leader
+            leader_speed = traci.vehicle.getSpeed(leader_id)
+            speed_diff = self.speed - leader_speed
+
+            if speed_diff > 0:
+                stop_distance = self.speed**2 / (2 * abs(maxDecel))
+
+                if distance <= stop_distance:
+                    self.emergencyBreak(leader_speed)
+                    return
+
+                target_speed = min(speed_limit, leader_speed)
+                target_speed_diff = target_speed - self.speed
+
+                if target_speed_diff < 0:
+                    min_duration = abs(target_speed_diff) / abs(maxDecel)
+                    safe_duration = min_duration * 1.1  # 安全マージンを追加
+                    traci.vehicle.slowDown(self.id, target_speed, safe_duration)
+
+    def controlSpeed(self):
+        # 無効な道路上の場合は制御しない
+        if self.road is None or self.road.startswith(":"):
+            return
+
+        # 現在のレーンと制限速度を取得
+        current_lane = f"{self.road}_{self.lane}"
+        speed_limit = traci.lane.getMaxSpeed(current_lane)
+
+        # 前方に車両がない場合の制御
+        if self.leader is None:
+            if self.speed > speed_limit:
+                safe_duration = self._calculateSafeDuration(self.speed - speed_limit)
+                traci.vehicle.slowDown(self.id, speed_limit, safe_duration)
+            return
+
+        # 前方車両がある場合の制御
+        leader_id, distance = self.leader
+        leader_speed = traci.vehicle.getSpeed(leader_id)
+        speed_diff = self.speed - leader_speed
+
+        # 自車両が前方車両より速い場合
+        if speed_diff > 0:
+            # 停止制動距離を計算
+            stop_distance = (
+                self.speed**2 / (2 * abs(maxDecel)) * 1.1
+            )  # 10%の安全マージンを追加
+
+            if distance > stop_distance:
+                return
+            elif distance == stop_distance:
+                # 通常の速度調整
+                target_speed = min(speed_limit, leader_speed)
+                safe_duration = self._calculateSafeDuration(self.speed - target_speed)
+                traci.vehicle.slowDown(self.id, target_speed, safe_duration)
+            if distance < stop_distance:
+                # 前方車両に近づきすぎている場合は急ブレーキ
+                self.emergencyBreak(leader_speed)
+                return
+
+    # 急ブレーキにならないように安全な速度調整時間を計算
+    def _calculateSafeDuration(self, speed_diff):
+        min_duration = speed_diff / abs(maxDecel)
+        return min_duration * 1.1  # 10%の安全マージンを追加
+
+    # 衝突回避のための速度調整
+    def emergencyBreak(self, targetSpeed):
+        stats.increment_emergency_brake()
+        traci.vehicle.slowDown(self.id, targetSpeed, 0.1)
+
+    def excutionDrive(self):
+        if self.road is None or self.road.startswith(":"):
+            return
         try:
             current_lane = f"{self.road}_{self.lane}"
             speed_limit = traci.lane.getMaxSpeed(current_lane)
-
-            # 現在の速度が制限速度を超えている場合
             if self.speed > speed_limit:
-                # target_speed = min(self.speed * 0.9, speed_limit) # 急ブレーキを避けるため、徐々に減速
                 target_speed = speed_limit
                 traci.vehicle.setSpeed(self.id, target_speed)
         except:
             pass
-
-    # 予定経路に従い速度調整
-    def executionDrive(self):
-        if self.plannedPath:
-            next_time = round(self.simTime + timeStep, 1)
-            for i in range(len(self.plannedPath.t)):
-                if self.plannedPath.t[i] == next_time:
-                    nextpos_x = self.plannedPath.x[i]
-                    nextpos_y = self.plannedPath.y[i]
-                    dif_pos = np.sqrt(
-                        (nextpos_x - self.pos_x) ** 2 + (nextpos_y - self.pos_y) ** 2
-                    )
-                    # 制限速度を考慮した速度計算
-                    current_lane = f"{self.road}_{self.lane}"
-                    speed_limit = traci.lane.getMaxSpeed(current_lane)
-                    next_speed = max(min(dif_pos / timeStep, speed_limit), 0)
-                    traci.vehicle.setSpeed(vehID=self.id, speed=next_speed)
-                    break
-        # 毎ステップで制限速度をチェック
-        self.checkSpeedLimit()
