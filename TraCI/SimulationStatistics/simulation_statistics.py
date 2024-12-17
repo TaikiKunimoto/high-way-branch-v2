@@ -2,8 +2,14 @@ import csv
 import os
 from datetime import datetime
 
+time_step = 0.1  # [s]
+
+
 
 class SimulationStatistics:
+    # 急ブレーキの回数
+    emergency_brake_count = 0
+
     def __init__(self, output_dir="SimulationStatistics/statistics"):
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
@@ -17,6 +23,11 @@ class SimulationStatistics:
         self.vehcile_speed_data = []  # シミュレーションを完了した車輌の速度データ
         self.r_pass_vehicle_speed_data = []  # r_pass車輌の速度データ
         self.r_exit_vehicle_speed_data = []  # r_exit車輌の速度データ
+
+        # Time-to-collision (TTC)
+        self.TTC_THRESHOLD = 2.0  # TTCの閾値 [s]
+        self.total_TET = 0  # Time Exposed TTC (TET) の累積値
+        self.min_TTC = float("inf")  # 記録された最小TTC
 
     # 車輌ごとの travel time を計算
     def calculate_travel_time(self, route, departure_time, arrival_time):
@@ -68,6 +79,28 @@ class SimulationStatistics:
 
         return overtake_count
 
+    # Time-to-collision (TTC) を計算
+    def calculate_TTC(self, distance, leader_speed, follower_speed):
+        relative_speed = follower_speed - leader_speed
+        if relative_speed <= 0:
+            return None
+
+        ttc = distance / relative_speed
+
+        # 最小TTC値の更新
+        if ttc < self.min_TTC:
+            self.min_TTC = ttc
+
+        # Time Exposed TTC (TET) の更新
+        if ttc < self.TTC_THRESHOLD:
+            self.total_TET += time_step
+
+        return ttc
+
+    # 急ブレーキの回数をカウント
+    def increment_emergency_brake(self):
+        SimulationStatistics.emergency_brake_count += 1
+
     def _create_filename(self):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         return f"{self.output_dir}/simulation_results_{timestamp}.csv"
@@ -96,6 +129,9 @@ class SimulationStatistics:
             "average_r_pass_speed",
             "average_r_exit_speed",
             "fairness_index",
+            "emergency_brake_count",
+            "min_TTC",
+            "TET",
         ]
         with open(self.filename, "w", newline="") as f:
             writer = csv.writer(f)
@@ -131,6 +167,9 @@ class SimulationStatistics:
             self._calculate_average_speed(self.r_pass_vehicle_speed_data),
             self._calculate_average_speed(self.r_exit_vehicle_speed_data),
             self._calculate_fairness_index(results),
+            SimulationStatistics.emergency_brake_count,
+            self.min_TTC,
+            self.total_TET,
         ]
 
         with open(self.filename, "a", newline="") as f:

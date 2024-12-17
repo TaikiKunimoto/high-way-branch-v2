@@ -91,16 +91,18 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
                     canceled_vehicle.remove(ins.id)
 
             # 自車両の情報（位置や速度）を更新
-            ins.updateStatus(running_list)
+            ins.updateStatus()
 
             # Laneごとのキューから車両を削除
             _updateLaneQueue(ins.id)
 
             # 車両の速度を更新
-            ins.executionDrive()
+            # ins.excutionDrive()
+            ins.controlSpeed()
 
-            print(ins.id, "lanePosition", traci.vehicle.getLanePosition(ins.id))
-            print("lcm", traci.vehicle.getLaneChangeMode(ins.id))
+            # TTCを計算
+            if ins.distance is not None:
+                stats.calculate_TTC(ins.distance, ins.leader_speed, ins.speed)
 
         # 車両インスタンスを削除
         if poplist:
