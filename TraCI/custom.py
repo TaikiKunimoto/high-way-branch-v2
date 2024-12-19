@@ -99,7 +99,7 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
             # 自車両の情報（位置や速度）を更新
             ins.updateStatus(congestio_point)
             # 車線変更を実行
-            ins.changeLane()
+            # ins.changeLane()
             # 車両の速度を更新
             ins.controlSpeed()
 

@@ -43,8 +43,12 @@ class CustomCAV:
         self.laneID = traci.vehicle.getLaneID(self.id)
         self.lane = None
         self.laneChangeStatus = "unavailable"  # available, unavailable
+        self.status = "straight"  # pending, straight
+        self.priority = None  # 1(high), 2, 3, 4, 5(low)
         self.distance = None  # 前方車両との距離
         self.leader_speed = None  # 前方車両の速度
+        self.blocking_left_follower = None  # 車線変更を妨げる左後続車両
+        self.blocking_right_follower = None  # 車線変更を妨げる右後続車両
 
         self.pos_x = 0
         self.pos_y = 0
@@ -84,9 +88,6 @@ class CustomCAV:
 
         # 車線変更が可能なポイントを通過したら車線変更を可能にする
         if self.hasPassedLaneChangePoint(congestion_point):
-            print(
-                f"lane change mode is enabled for {self.id}, point : {congestion_point}"
-            )
             self.laneChangeStatus = "available"
 
         # update own position
@@ -100,13 +101,39 @@ class CustomCAV:
         self.road = traci.vehicle.getRoadID(self.id)
         self.lane = traci.vehicle.getLaneIndex(self.id)
         self.laneID = traci.vehicle.getLaneID(self.id)
-        self.leader = traci.vehicle.getLeader(
-            self.id, 0
-        )  # 0 にすると制動距離より短い距離の先行車を取得
+        self.leader = traci.vehicle.getLeader(self.id, 0)
         self.distance = self.leader[1] if self.leader is not None else None
         self.leader_speed = (
             traci.vehicle.getSpeed(self.leader[0]) if self.leader is not None else None
         )
+        self._getFollowingVehicles(self.road, self.lane)
+        print(
+            f"{self.id} : right: {self.blocking_right_follower}, left: {self.blocking_left_follower}"
+        )
+
+    # 隣接車線の後続車両を取得
+    def _getFollowingVehicles(self, road, lane):
+        if road is None or lane is None or road != "MainLane1":
+            self.blocking_left_follower = None
+            self.blocking_right_follower = None
+            return
+
+        left_mode = 0b100  # left(0) + follower(0) + blocking only(1)
+        right_mode = 0b101  # right(1) + follower(0) + blocking only(1)
+
+        if lane == 0:
+            left_follower = traci.vehicle.getNeighbors(self.id, left_mode)
+            self.blocking_left_follower = left_follower if left_follower else None
+            self.blocking_right_follower = None
+        elif lane == 1:
+            left_follower = traci.vehicle.getNeighbors(self.id, left_mode)
+            right_follower = traci.vehicle.getNeighbors(self.id, right_mode)
+            self.blocking_left_follower = left_follower if left_follower else None
+            self.blocking_right_follower = right_follower if right_follower else None
+        elif lane == 2:
+            right_follower = traci.vehicle.getNeighbors(self.id, right_mode)
+            self.blocking_left_follower = None
+            self.blocking_right_follower = right_follower if right_follower else None
 
     # 車線変更が可能なポイントを通過したかどうか
     def hasPassedLaneChangePoint(self, congestion_point):
