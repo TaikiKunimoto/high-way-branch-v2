@@ -5,7 +5,7 @@ import sys
 from datetime import datetime
 
 import traci
-from func.cav import CAV
+from func.default_cav import DefaultCAV
 from SimulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 
@@ -261,7 +261,7 @@ def _add_vehicle(alpha):
             departPos="base",
             departSpeed="last",
         )
-        instance = CAV(veh_id, alpha, withAgree=True)
+        instance = DefaultCAV(veh_id, alpha, withAgree=True)
         vehicle_instance.append(instance)
 
         if departLane == "0":
@@ -284,7 +284,7 @@ def _add_vehicle(alpha):
             departPos="base",
             departSpeed="last",
         )
-        instance = CAV(veh_id, alpha, withAgree=True)
+        instance = DefaultCAV(veh_id, alpha, withAgree=True)
         vehicle_instance.append(instance)
 
         if departLane == "0":
@@ -320,7 +320,7 @@ if __name__ == "__main__":
     inflow_pass = int(args[3])  # 車両の流入数 pass
     inflow_exit = int(args[4])  # 車両の流入数 exit
 
-    stats = SimulationStatistics()
+    stats = SimulationStatistics(filename="default")
 
     # this script has been called from the command line. It will start sumo as a server, then connect and run
     if options.nogui:
