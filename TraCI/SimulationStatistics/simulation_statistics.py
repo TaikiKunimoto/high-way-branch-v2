@@ -129,7 +129,7 @@ class SimulationStatistics:
             "average_r_pass_speed",
             "average_r_exit_speed",
             "fairness_index",
-            "emergency_brake_count",
+            # "emergency_brake_count",
             "min_TTC",
             "TET",
         ]
@@ -167,7 +167,6 @@ class SimulationStatistics:
             self._calculate_average_speed(self.r_pass_vehicle_speed_data),
             self._calculate_average_speed(self.r_exit_vehicle_speed_data),
             self._calculate_fairness_index(results),
-            SimulationStatistics.emergency_brake_count,
             self.min_TTC,
             self.total_TET,
         ]

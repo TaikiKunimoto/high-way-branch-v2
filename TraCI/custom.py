@@ -99,9 +99,25 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
             # 自車両の情報（位置や速度）を更新
             ins.updateStatus(congestio_point)
             # 車線変更を実行
-            ins.changeLane()
+            ins.executeLaneChange()
             # 車両の速度を更新
             ins.controlSpeed()
+
+            # 衝突が発生しているか確認
+            colliding_vehicles = traci.simulation.getCollidingVehiclesIDList()
+            if colliding_vehicles:
+                print("Collision detected!")
+                for vehicle_id in colliding_vehicles:
+                    # 車両の位置情報を取得
+                    x, y = traci.vehicle.getPosition(vehicle_id)
+                    lane_id = traci.vehicle.getLaneID(vehicle_id)
+                    edge_id = traci.vehicle.getRoadID(vehicle_id)
+
+                    print(f"time: {traci.simulation.getTime()}")
+                    print(f"Vehicle {vehicle_id}:")
+                    print(f"- Position: ({x:.2f}, {y:.2f})")
+                    print(f"- Lane: {lane_id}")
+                    print(f"- Edge: {edge_id}")
 
             # Laneごとのキューから車両を削除
             _updateLaneQueue(ins.id)
