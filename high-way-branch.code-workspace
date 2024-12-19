@@ -1,0 +1,17 @@
+{
+    "folders": [
+      {
+        "name": "high-way-branch",
+        "path": "."
+      },
+      {
+        "path": "config"
+      },
+      {
+        "path": "TraCI"
+      }
+    ],
+    "settings": {
+    }
+  }
+  
