@@ -10,10 +10,10 @@ class SimulationStatistics:
     # 急ブレーキの回数
     emergency_brake_count = 0
 
-    def __init__(self, output_dir="SimulationStatistics/statistics"):
+    def __init__(self, filename, output_dir="SimulationStatistics/statistics"):
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
-        self.filename = self._create_filename()
+        self.filename = self._create_filename(filename)
         self._create_csv_with_headers()
 
         self.total_travel_time = 0  # 全車両の走行時間
@@ -101,9 +101,9 @@ class SimulationStatistics:
     def increment_emergency_brake(self):
         SimulationStatistics.emergency_brake_count += 1
 
-    def _create_filename(self):
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return f"{self.output_dir}/simulation_results_{timestamp}.csv"
+    def _create_filename(self, filename):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        return f"{self.output_dir}/simulation_results_{filename}_{timestamp}.csv"
 
     def _create_csv_with_headers(self):
         headers = [

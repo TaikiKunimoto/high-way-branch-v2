@@ -5,7 +5,7 @@ import sys
 from datetime import datetime
 
 import traci
-from func.cav import CAV
+from func.custom_cav import CustomCAV
 from SimulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 
@@ -30,6 +30,9 @@ lane0_queue = []
 lane1_queue = []
 lane2_queue = []
 
+CONGESTION_SPEED = 11.1  # m/s (40 km/h) 渋滞判定の速度
+MIN_CONGESTED_VEHICLES = 5  # 渋滞判定の最低車両数
+
 
 def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
     _set_environment(inflow_pass, inflow_exit)
@@ -47,6 +50,9 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
         running_list = traci.vehicle.getIDList()
 
         poplist = []
+
+        congestio_point = _getCongestionPoint()
+        # print("congestion_point", congestio_point)
 
         for index, ins in enumerate(vehicle_instance):
             # シミュレーション範囲を出た車両をリスト化
@@ -91,13 +97,14 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
                     canceled_vehicle.remove(ins.id)
 
             # 自車両の情報（位置や速度）を更新
-            ins.updateStatus()
+            ins.updateStatus(congestio_point)
+            # 車線変更を実行
+            ins.changeLane()
+            # 車両の速度を更新
+            ins.controlSpeed()
 
             # Laneごとのキューから車両を削除
             _updateLaneQueue(ins.id)
-
-            # 車両の速度を更新
-            ins.controlSpeed()
 
             # TTCを計算
             if ins.distance is not None:
@@ -223,6 +230,35 @@ def _getDepartLane(edge_id):
     return departLane
 
 
+# Lane2での渋滞が発生しているポイントを調査
+def _getCongestionPoint():
+    lane2_vehicles = traci.lane.getLastStepVehicleIDs("MainLane1_2")
+    if len(lane2_vehicles) < MIN_CONGESTED_VEHICLES:
+        return None
+
+    sorted_vehicles = sorted(
+        lane2_vehicles,
+        key=lambda x: traci.vehicle.getLanePosition(x),
+        reverse=True,
+    )
+
+    congested_sequence = []
+    tail_position = None
+    for veh_id in sorted_vehicles:
+        speed = traci.vehicle.getSpeed(veh_id)
+
+        if speed <= CONGESTION_SPEED:
+            congested_sequence.append(veh_id)
+            if len(congested_sequence) >= MIN_CONGESTED_VEHICLES:
+                tail_position = traci.vehicle.getLanePosition(congested_sequence[0])
+                continue
+        else:
+            congested_sequence = []
+            continue
+
+    return tail_position
+
+
 def _shouldContinueSimWithVehiclesCount():
     numVehicles = traci.simulation.getMinExpectedNumber()
     return True if numVehicles > 0 else False
@@ -261,7 +297,7 @@ def _add_vehicle(alpha):
             departPos="base",
             departSpeed="last",
         )
-        instance = CAV(veh_id, alpha, withAgree=True)
+        instance = CustomCAV(veh_id, alpha, withAgree=True)
         vehicle_instance.append(instance)
 
         if departLane == "0":
@@ -284,7 +320,7 @@ def _add_vehicle(alpha):
             departPos="base",
             departSpeed="last",
         )
-        instance = CAV(veh_id, alpha, withAgree=True)
+        instance = CustomCAV(veh_id, alpha, withAgree=True)
         vehicle_instance.append(instance)
 
         if departLane == "0":
@@ -320,7 +356,7 @@ if __name__ == "__main__":
     inflow_pass = int(args[3])  # 車両の流入数 pass
     inflow_exit = int(args[4])  # 車両の流入数 exit
 
-    stats = SimulationStatistics()
+    stats = SimulationStatistics(filename="custom")
 
     # this script has been called from the command line. It will start sumo as a server, then connect and run
     if options.nogui:

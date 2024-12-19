@@ -5,6 +5,7 @@ import sys
 from re import S
 
 import numpy as np
+
 from SimulationStatistics.simulation_statistics import SimulationStatistics
 
 if "SUMO_HOME" in os.environ:
@@ -24,10 +25,10 @@ timeStep = 0.1  # [s]
 
 mergeStartPos = 1100  # [m] 単純な手法の場合の車線変更開始地点(1500 - x)
 
-stats = SimulationStatistics()
+# stats = SimulationStatistics()
 
 
-class CAV:
+class DefaultCAV:
     # constructor
     def __init__(self, vehID, alpha, withAgree=False):
         self.id = str(vehID)
@@ -37,7 +38,7 @@ class CAV:
         # traci.vehicle.setLaneChangeMode(vehID=self.id, lcm=0b000000010000)
 
         # control vehicle speed by traci
-        traci.vehicle.setSpeedMode(vehID=self.id, sm=0b100000)
+        traci.vehicle.setSpeedMode(vehID=self.id, sm=0b000000)
 
         self.plannedPath = None
         self.desiredPaths = None
@@ -144,7 +145,7 @@ class CAV:
             return True
         return False
 
-    # 車両の速度を調整
+    # 車両の速度を制限速度に基づいて調整
     def controlSpeed(self):
         # 無効な道路上の場合は制御しない
         if self.road is None or self.road.startswith(":"):
@@ -154,43 +155,14 @@ class CAV:
         current_lane = f"{self.road}_{self.lane}"
         speed_limit = traci.lane.getMaxSpeed(current_lane)
 
-        # 前方に車両がない場合の制御
-        if self.leader is None:
-            if self.speed > speed_limit:
-                safe_duration = self._calculateSafeDuration(self.speed - speed_limit)
-                traci.vehicle.slowDown(self.id, speed_limit, safe_duration)
-            return
+        # 制限速度を超えている場合は減速
+        if self.speed > speed_limit:
+            safe_duration = self._calculateSafeDuration(self.speed - speed_limit)
+            traci.vehicle.slowDown(self.id, speed_limit, safe_duration)
+        return
 
-        # 前方車両がある場合の制御
-        leader_id, distance = self.leader
-        leader_speed = traci.vehicle.getSpeed(leader_id)
-        speed_diff = self.speed - leader_speed
-
-        # 自車両が前方車両より速い場合
-        if speed_diff > 0:
-            # 停止制動距離を計算
-            stop_distance = (
-                self.speed**2 / (2 * abs(maxDecel)) * 1.1
-            )  # 10%の安全マージンを追加
-
-            if distance > stop_distance:
-                return
-            elif distance == stop_distance:
-                # 通常の速度調整
-                target_speed = min(speed_limit, leader_speed)
-                safe_duration = self._calculateSafeDuration(self.speed - target_speed)
-                traci.vehicle.slowDown(self.id, target_speed, safe_duration)
-            if distance < stop_distance:
-                # 前方車両に近づきすぎている場合は急ブレーキ
-                self.emergencyBreak(leader_speed)
-                return
-
-    # 急ブレーキにならないように安全な速度調整時間を計算
+    # 最大減速で速度差を0にするために必要な時間を計算
     def _calculateSafeDuration(self, speed_diff):
-        min_duration = speed_diff / abs(maxDecel)
-        return min_duration * 1.1  # 10%の安全マージンを追加
-
-    # 衝突回避のための速度調整
-    def emergencyBreak(self, targetSpeed):
-        stats.increment_emergency_brake()
-        traci.vehicle.slowDown(self.id, targetSpeed, 0.1)
+        if speed_diff <= 0:
+            return 0
+        return speed_diff / abs(maxDecel)
