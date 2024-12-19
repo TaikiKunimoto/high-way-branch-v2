@@ -106,14 +106,19 @@ class CustomCAV:
         self.leader_speed = (
             traci.vehicle.getSpeed(self.leader[0]) if self.leader is not None else None
         )
-        self._getFollowingVehicles(self.road, self.lane)
+        self._getFollowingVehicles()
         print(
             f"{self.id} : right: {self.blocking_right_follower}, left: {self.blocking_left_follower}"
         )
 
     # 隣接車線の後続車両を取得
-    def _getFollowingVehicles(self, road, lane):
-        if road is None or lane is None or road != "MainLane1":
+    def _getFollowingVehicles(self):
+        if self.laneChangeStatus == "unavailable":
+            self.blocking_left_follower = None
+            self.blocking_right_follower = None
+            return
+
+        if self.road is None or self.lane is None or self.road != "MainLane1":
             self.blocking_left_follower = None
             self.blocking_right_follower = None
             return
@@ -121,16 +126,16 @@ class CustomCAV:
         left_mode = 0b100  # left(0) + follower(0) + blocking only(1)
         right_mode = 0b101  # right(1) + follower(0) + blocking only(1)
 
-        if lane == 0:
+        if self.lane == 0:
             left_follower = traci.vehicle.getNeighbors(self.id, left_mode)
             self.blocking_left_follower = left_follower if left_follower else None
             self.blocking_right_follower = None
-        elif lane == 1:
+        elif self.lane == 1:
             left_follower = traci.vehicle.getNeighbors(self.id, left_mode)
             right_follower = traci.vehicle.getNeighbors(self.id, right_mode)
             self.blocking_left_follower = left_follower if left_follower else None
             self.blocking_right_follower = right_follower if right_follower else None
-        elif lane == 2:
+        elif self.lane == 2:
             right_follower = traci.vehicle.getNeighbors(self.id, right_mode)
             self.blocking_left_follower = None
             self.blocking_right_follower = right_follower if right_follower else None
