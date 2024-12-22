@@ -353,7 +353,10 @@ class CustomCAV:
 
     # 車線変更を実行
     def executeLaneChange(self):
-        print(f"{self.id}: {self.action}, self_lane: {self.lane}")
+        # TODO 衝突が発生しなくなったらここの条件をなくす
+        if self.road != "MainLane1":
+            return
+
         if self.action == "stay":
             return
 
@@ -365,7 +368,19 @@ class CustomCAV:
             traci.vehicle.changeLane(self.id, self.lane + lane_change_amount, 0)
             self._resetLaneChangeState()
         else:
-            if self.receiving_cooperative_from_id is None:
+            if self.receiving_cooperative_from_id in vehicle_instances:
+                supporting_vehicle = vehicle_instances[
+                    self.receiving_cooperative_from_id
+                ]
+                supporting_vehicle_pos = traci.vehicle.getLanePosition(
+                    supporting_vehicle.id
+                )
+                own_pos = traci.vehicle.getLanePosition(self.id)
+                position_diff = own_pos - supporting_vehicle_pos
+            else:
+                position_diff = -1 * math.inf
+
+            if self.receiving_cooperative_from_id is None or position_diff < -10:
                 # 車線変更ができず、まだ協調車両がいない場合
                 self._decideYieldingVehicle()
                 self._requestCooperation()
@@ -483,28 +498,92 @@ class CustomCAV:
             self.priority = 5
 
     # 車線変更が安全かどうか
+    # TODO 車線変更操作の安全性を判断する関数を改善する
+
+    # def _canChangeLane(self, direction):
+    #     # 隣接レーンの車両を取得
+    #     followers = self.left_followers if direction == "left" else self.right_followers
+    #     leaders = self.left_leaders if direction == "left" else self.right_leaders
+
+    #     # 後続車両との安全性チェック
+    #     if followers:
+    #         follower_id, follower_distance = followers[0]  # 最も近い後続車両
+    #         if follower_id in vehicle_instances:
+    #             follower = vehicle_instances[follower_id]
+
+    #             # 後続車両のsafety_gapを使用
+    #             if follower_distance < follower.safety_gap:
+    #                 return False
+
+    #     # 先行車両との安全性チェック
+    #     if leaders:
+    #         leader_id, leader_distance = leaders[0]  # 最も近い先行車両
+    #         if leader_id in vehicle_instances:
+    #             leader = vehicle_instances[leader_id]
+    #             # 自車両のsafety_gapを使用
+    #             if leader_distance < leader.safety_gap:
+    #                 return False
+
+    #     return True
     def _canChangeLane(self, direction):
-        # 隣接レーンの車両を取得
+        """
+        車線変更の安全性を判断する
+        最大加減速度を考慮して必要な車間距離を動的に計算
+        """
         followers = self.left_followers if direction == "left" else self.right_followers
         leaders = self.left_leaders if direction == "left" else self.right_leaders
 
         # 後続車両との安全性チェック
         if followers:
-            follower_id, follower_distance = followers[0]  # 最も近い後続車両
+            follower_id, follower_distance = followers[0]
             if follower_id in vehicle_instances:
                 follower = vehicle_instances[follower_id]
+                speed_diff = follower.speed - self.speed
 
-                # 後続車両のsafety_gapを使用
-                if follower_distance < follower.safety_gap:
+                if speed_diff <= 0:  # 後続車両が遅い場合
+                    # 最小限の車間距離のみ要求
+                    required_distance = self.length + minGap
+                else:
+                    # 後続車両の制動可能距離を計算
+                    # v^2 = v0^2 + 2ax から制動距離を計算
+                    follower_stopping_distance = (speed_diff**2) / (2 * abs(maxDecel))
+                    # 反応時間分の走行距離
+                    reaction_distance = speed_diff * reactionTime
+                    # 車線変更時は通常のsafety_gapより短い距離を許容
+                    required_distance = (
+                        self.length
+                        + minGap
+                        + follower_stopping_distance * 0.7  # 制動距離を70%に緩和
+                        + reaction_distance * 0.8
+                    )  # 反応距離を80%に緩和
+
+                if follower_distance < required_distance:
                     return False
 
         # 先行車両との安全性チェック
         if leaders:
-            leader_id, leader_distance = leaders[0]  # 最も近い先行車両
+            leader_id, leader_distance = leaders[0]
             if leader_id in vehicle_instances:
                 leader = vehicle_instances[leader_id]
-                # 自車両のsafety_gapを使用
-                if leader_distance < leader.safety_gap:
+                speed_diff = self.speed - leader.speed
+
+                if speed_diff <= 0:  # 自車両が遅い場合
+                    # 最小限の車間距離のみ要求
+                    required_distance = self.length + minGap
+                else:
+                    # 自車両の制動可能距離を計算
+                    own_stopping_distance = (speed_diff**2) / (2 * abs(maxDecel))
+                    # 反応時間分の走行距離
+                    reaction_distance = speed_diff * reactionTime
+                    # 車線変更時は通常のsafety_gapより短い距離を許容
+                    required_distance = (
+                        self.length
+                        + minGap
+                        + own_stopping_distance * 0.7  # 制動距離を70%に緩和
+                        + reaction_distance * 0.8
+                    )  # 反応距離を80%に緩和
+
+                if leader_distance < required_distance:
                     return False
 
         return True
