@@ -25,6 +25,8 @@ r_exit_departed_vehicle = []
 r_pass_exit_vehicle = []
 r_exit_exit_vehicle = []
 canceled_vehicle = []
+collision_history = []  # 各要素は (time, vehicle_id1, vehicle_id2) のタプル
+
 
 lane0_queue = []
 lane1_queue = []
@@ -39,6 +41,8 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
 
     while _shouldContinueSimWithSimulationTime():
         traci.simulationStep()
+
+        _check_collision()
 
         # このstepでシミュレーション範囲を出た車輌のリスト
         arrived_list = traci.simulation.getArrivedIDList()
@@ -103,28 +107,12 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
             # 車両の速度を更新
             ins.controlSpeed()
 
-            # 衝突が発生しているか確認
-            colliding_vehicles = traci.simulation.getCollidingVehiclesIDList()
-            if colliding_vehicles:
-                print("Collision detected!")
-                for vehicle_id in colliding_vehicles:
-                    # 車両の位置情報を取得
-                    x, y = traci.vehicle.getPosition(vehicle_id)
-                    lane_id = traci.vehicle.getLaneID(vehicle_id)
-                    edge_id = traci.vehicle.getRoadID(vehicle_id)
-
-                    print(f"time: {traci.simulation.getTime()}")
-                    print(f"Vehicle {vehicle_id}:")
-                    print(f"- Position: ({x:.2f}, {y:.2f})")
-                    print(f"- Lane: {lane_id}")
-                    print(f"- Edge: {edge_id}")
-
             # Laneごとのキューから車両を削除
             _updateLaneQueue(ins.id)
 
             # TTCを計算
-            if ins.distance is not None:
-                stats.calculate_TTC(ins.distance, ins.leader_speed, ins.speed)
+            if ins.leader_distance is not None:
+                stats.calculate_TTC(ins.leader_distance, ins.leader_speed, ins.speed)
 
         # 車両インスタンスを削除
         if poplist:
@@ -135,6 +123,7 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
         _add_vehicle(alpha)
 
     _printSImulationInfoAtEnd(running_list)
+    _print_collision_summary()
 
     # シミュレーション結果をcsvファイルに保存
     results = {
@@ -206,8 +195,33 @@ def _printSImulationInfoAtEnd(running_list):
     print("lane0_queue Length :", len(lane0_queue))
     print("lane1_queue Length :", len(lane1_queue))
     print("lane2_queue Length :", len(lane2_queue))
-
     print("=====================================")
+
+
+def _print_collision_summary():
+    total_collisions = len(collision_history)
+    total_vehicles_involved = sum(len(vehicles) for _, vehicles in collision_history)
+    
+    print("\n=== Collision Summary ===")
+    print(f"Total number of collision events: {total_collisions}")
+    print(f"Total number of vehicles involved in collisions: {total_vehicles_involved}")
+    print("\nCollision details:")
+    for time, vehicles in collision_history:
+        print(f"Time {time:.1f}: Collision between vehicles: {', '.join(vehicles)}")
+
+
+def _check_collision():
+    colliding_ids = traci.simulation.getCollidingVehiclesIDList()
+    if len(colliding_ids) > 0:
+        collision_time = traci.simulation.getTime()
+        
+        # 同じ衝突が重複して記録されないようにチェック
+        for time, vehicles in collision_history:
+            if abs(time - collision_time) < 1.0 and set(vehicles) == set(colliding_ids):
+                return
+                
+        collision_history.append((collision_time, colliding_ids))
+        print(f"Collision detected at time {collision_time:.1f} between vehicles: {', '.join(colliding_ids)}")
 
 
 def _updateLaneQueue(id: str):

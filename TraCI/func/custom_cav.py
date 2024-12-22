@@ -17,6 +17,9 @@ import traci  # noqa
 maxSpeed = 27  # [m/s]
 maxAccel = 3.0  # [m/ss]
 maxDecel = -5.0  # [m/ss]
+minGap = 2.5  # [m]
+reactionTime = 0.75  # [s]
+frictionCoefficient = 0.7  # 摩擦係数
 LANE_WIDTH = 3.2  # [m]
 LANE_CHANGE_MARGIN = 400.0  # [m] 渋滞発生地点の何メートル手前から車線変更を許可するか
 
@@ -45,7 +48,7 @@ class CustomCAV:
         self.laneChangeStatus = "unavailable"  # available, unavailable
         self.status = "straight"  # pending, straight
         self.priority = None  # 1(high), 2, 3, 4, 5(low)
-        self.distance = None  # 前方車両との距離
+        self.leader_distance = None  # 前方車両との距離
         self.leader_speed = None  # 前方車両の速度
         self.blocking_left_follower = None  # 車線変更を妨げる左後続車両
         self.blocking_right_follower = None  # 車線変更を妨げる右後続車両
@@ -60,7 +63,9 @@ class CustomCAV:
         self.leader = None
         self.length = 5.0
         self.width = 1.8
-        self.minGap = 2.5
+        self.reaction_distance = 0 # 空走距離 [m]
+        self.breaking_distance = 0 # 制動距離 [m]
+        self.safety_gap = self.reaction_distance + self.breaking_distance + minGap
 
         self.simTime = 0
 
@@ -140,10 +145,12 @@ class CustomCAV:
         self.lane = traci.vehicle.getLaneIndex(self.id)
         self.laneID = traci.vehicle.getLaneID(self.id)
         self.leader = traci.vehicle.getLeader(self.id, 0)
-        self.distance = self.leader[1] if self.leader is not None else None
+        self.leader_distance = self.leader[1] if self.leader is not None else None
         self.leader_speed = (
             traci.vehicle.getSpeed(self.leader[0]) if self.leader is not None else None
         )
+
+        self.calculateSafetyGap()
 
         # 車線変更が可能なポイントを通過したら車線変更を可能にする
         if self.hasPassedLaneChangePoint(congestion_point):
@@ -153,6 +160,16 @@ class CustomCAV:
 
         self._getFollowingVehicles()
         self._getLeadingVehicles()
+
+    # 適切な車間距離の計算
+    def calculateSafetyGap(self):
+        speed_kmh = self.speed * 3.6
+        # 空走距離
+        self.reaction_distance = self.speed * reactionTime
+        # 制動距離
+        self.breaking_distance = (speed_kmh ** 2) / (254.016 * frictionCoefficient)
+        # 安全距離
+        self.safety_gap = self.reaction_distance + self.breaking_distance + minGap
 
     # 隣接車線の先行車輌を取得
     def _getLeadingVehicles(self):
@@ -213,11 +230,9 @@ class CustomCAV:
         current_pos = traci.vehicle.getLanePosition(self.id)
 
         if congestion_point is None:
-            if current_pos > lane_length - LANE_CHANGE_MARGIN:
-                return True
-            return False
-
-        merge_start_pos = congestion_point - LANE_CHANGE_MARGIN
+            merge_start_pos = lane_length - LANE_CHANGE_MARGIN
+        else:
+            merge_start_pos = congestion_point - LANE_CHANGE_MARGIN
 
         if current_pos > merge_start_pos:
             return True
@@ -233,48 +248,77 @@ class CustomCAV:
         current_lane = f"{self.road}_{self.lane}"
         speed_limit = traci.lane.getMaxSpeed(current_lane)
 
-        # 前方に車両がない場合の制御
+        # 前方車両がいない場合
         if self.leader is None:
-            # 減速
-            if self.speed > speed_limit:
-                safe_duration = self._calculateSafeDecelDuration(
-                    self.speed - speed_limit
-                )
-                traci.vehicle.slowDown(self.id, speed_limit, safe_duration)
-            # 加速
-            else:
-                safe_duration = self._calculateSafeAccelDuration(
-                    speed_limit - self.speed
-                )
-                traci.vehicle.slowDown(self.id, speed_limit, safe_duration)
+            self._controlSpeedBySpeedLimit(speed_limit)
             return
-
-        # 前方車両がある場合の制御
-        speed_diff = self.speed - self.leader_speed
-
-        # 自車両が前方車両より速い場合
-        if speed_diff > 0:
+        
+        # 前方車両がいる場合
+        else:
+            speed_diff = self.speed - self.leader_speed
             min_duration = self._calculateSafeDecelDuration(speed_diff)
-            ttc = self._calculateTTC(self.distance, speed_diff)
-            print(f"min_duration: {min_duration}, ttc: {ttc}")
+            ttc_with_safety_margin = self._calculateTTC(
+                self.leader_distance + minGap, speed_diff
+            )
+            # 前方車両との距離 > safety_gap の場合
+            if self.leader_distance > self.safety_gap:
+                if speed_diff <= 0:
+                    self._controlSpeedBySpeedLimit(speed_limit)
+                    return
+                elif min_duration < ttc_with_safety_margin:
+                    self._controlSpeedBySpeedLimit(speed_limit)
+                    return
+                else:
+                    # 通常の減速
+                    duration = min(ttc_with_safety_margin, min_duration)
+                    traci.vehicle.slowDown(self.id, self.leader_speed, duration)
+                    return
 
-            if self.distance < 2.5:
-                # 前方車両に近づきすぎている場合は急ブレーキ
-                self._emergencyBreak(ttc, self.leader_speed)
-                return
+            # 前方車両との距離 = safety_gap の場合
+            elif self.leader_distance == self.safety_gap:
+                if speed_diff > 0:
+                    # 通常の減速
+                    duration = min(ttc_with_safety_margin, min_duration)
+                    traci.vehicle.slowDown(self.id, self.leader_speed, duration)
+                    return
+                else:
+                    return
 
-            if ttc >= min_duration:
-                return
+            # 前方車両との距離 < safety_gap の場合
             else:
-                # 減速
-                duration = min(ttc, min_duration)
-                traci.vehicle.slowDown(self.id, self.leader_speed, duration)
+                if speed_diff >= 0:
+                    if self.leader_distance < minGap:
+                        # 急ブレーキ
+                        self._emergencyBreak(self.leader_speed)
+                        return
+                    else:
+                        # 通常の減速
+                        duration = min(ttc_with_safety_margin, min_duration)
+                        traci.vehicle.slowDown(self.id, self.leader_speed, duration)
+                else:
+                    return
+
+    # 制限速度に基づいて速度を調整
+    def _controlSpeedBySpeedLimit(self, speed_limit):
+        # 減速
+        if self.speed > speed_limit:
+            safe_duration = self._calculateSafeDecelDuration(self.speed - speed_limit)
+            traci.vehicle.slowDown(self.id, speed_limit, safe_duration)
+            return
+        # 維持
+        elif self.speed == speed_limit:
+            return
+        # 加速
+        else:
+            safe_duration = self._calculateSafeAccelDuration(speed_limit - self.speed)
+            traci.vehicle.slowDown(self.id, speed_limit, safe_duration)
+            return
 
     # 最大減速で速度差を0にするために必要な時間を計算
     def _calculateSafeDecelDuration(self, speed_diff):
         if speed_diff <= 0:
             return 0
-        return speed_diff / abs(maxDecel) * 2 # 2倍の余裕を持たせる
+        return speed_diff / abs(maxDecel)
 
     def _calculateSafeAccelDuration(self, speed_diff):
         if speed_diff <= 0:
@@ -284,25 +328,18 @@ class CustomCAV:
     # 現在の速度差で進んだ際に衝突までにかかる時間(TTC)
     def _calculateTTC(self, distance, speed_diff):
         if speed_diff <= 0:
-            return None
+            return math.inf
         return distance / speed_diff
 
     # 衝突回避のための速度調整
-    def _emergencyBreak(self, ttc, targetSpeed):
-        print("emergency brake")
-        print(f"ttc: {ttc}, targetSpeed: {targetSpeed}")
-        # stats.increment_emergency_brake()
-        traci.vehicle.slowDown(self.id, targetSpeed, ttc)
+    def _emergencyBreak(self, targetSpeed):
+        # print("emergency brake")
+        self.emergency_brake_counter += 1
+        traci.vehicle.setSpeed(self.id, targetSpeed)
 
     # 車線変更を実行
     def executeLaneChange(self):
         action = self.decideLaneChange()
-
-        if self.speed == 0:
-            tmp = self._isLaneChangeSafe("left")
-            print(
-                f"vehicle: {self.id}, lane: {self.lane}, route: {self.route}, action: {action}, laneChangeStatus: {self.laneChangeStatus}, isLaneChangeSafe: {tmp}"
-            )
 
         if action == "change_left":
             traci.vehicle.changeLane(self.id, self.lane + 1, 0)
@@ -340,7 +377,7 @@ class CustomCAV:
         collision_with_follower = blocking_follower is not None
 
         # 先行車との衝突チェック
-        minimum_safe_distance = self.length + self.minGap
+        minimum_safe_distance = self.length + minGap
         collision_with_leader = leader and leader[0][1] < minimum_safe_distance
 
         # 両方の衝突チェックがFalseの場合のみ安全
