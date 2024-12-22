@@ -102,6 +102,8 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
 
             # 自車両の情報（位置や速度）を更新
             ins.updateStatus(congestio_point)
+            # 自身の行動(Priority)を更新
+            ins.decideNextActionAndPriority()
             # 車線変更を実行
             ins.executeLaneChange()
             # 車両の速度を更新
@@ -201,7 +203,7 @@ def _printSImulationInfoAtEnd(running_list):
 def _print_collision_summary():
     total_collisions = len(collision_history)
     total_vehicles_involved = sum(len(vehicles) for _, vehicles in collision_history)
-    
+
     print("\n=== Collision Summary ===")
     print(f"Total number of collision events: {total_collisions}")
     print(f"Total number of vehicles involved in collisions: {total_vehicles_involved}")
@@ -214,14 +216,16 @@ def _check_collision():
     colliding_ids = traci.simulation.getCollidingVehiclesIDList()
     if len(colliding_ids) > 0:
         collision_time = traci.simulation.getTime()
-        
+
         # 同じ衝突が重複して記録されないようにチェック
         for time, vehicles in collision_history:
             if abs(time - collision_time) < 1.0 and set(vehicles) == set(colliding_ids):
                 return
-                
+
         collision_history.append((collision_time, colliding_ids))
-        print(f"Collision detected at time {collision_time:.1f} between vehicles: {', '.join(colliding_ids)}")
+        print(
+            f"Collision detected at time {collision_time:.1f} between vehicles: {', '.join(colliding_ids)}"
+        )
 
 
 def _updateLaneQueue(id: str):
