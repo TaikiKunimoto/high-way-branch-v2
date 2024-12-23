@@ -689,3 +689,25 @@ class CustomCAV:
         return target_lane_avg_speed > current_lane_avg_speed * (
             1 + SPEED_IMPROVEMENT_THRESHOLD / 100
         )
+
+    def _isPredictedSpeedIncrease(self, direction):
+        if direction == "left":
+            target_lane_leaders = self.left_leaders
+        elif direction == "right":
+            target_lane_leaders = self.right_leaders
+        else:
+            return False
+
+        if not target_lane_leaders:
+            return False  # TODO 要検討
+
+        target_lane_leader_speeds = [
+            traci.vehicle.getSpeed(leader[0]) for leader in target_lane_leaders
+        ]
+        target_lane_avg_leader_speed = sum(target_lane_leader_speeds) / len(
+            target_lane_leader_speeds
+        )
+
+        return target_lane_avg_leader_speed > self.speed * (
+            1 + SPEED_IMPROVEMENT_THRESHOLD / 100
+        )
