@@ -25,6 +25,7 @@ r_exit_departed_vehicle = []
 r_pass_exit_vehicle = []
 r_exit_exit_vehicle = []
 canceled_vehicle = []
+canceled_veh_without_collied_veh = []
 collision_history = []  # 各要素は (time, vehicle_id1, vehicle_id2) のタプル
 
 
@@ -56,7 +57,6 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
         poplist = []
 
         congestio_point = _getCongestionPoint()
-        # print("congestion_point", congestio_point)
 
         for index, ins in enumerate(vehicle_instance):
             # シミュレーション範囲を出た車両をリスト化
@@ -124,6 +124,12 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
         # 車両の追加
         _add_vehicle(alpha)
 
+    collided_vehicles = set()
+    for _, vehicles in collision_history:
+        collided_vehicles.update(vehicles)
+
+    canceled_veh_without_collied_veh = [veh_id for veh_id in canceled_vehicle if veh_id not in collided_vehicles]
+
     _printSImulationInfoAtEnd(running_list)
     _print_collision_summary()
 
@@ -137,7 +143,7 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
         "r_exit_departed_vehicle": r_exit_departed_vehicle,
         "r_pass_exit_vehicle": r_pass_exit_vehicle,
         "r_exit_exit_vehicle": r_exit_exit_vehicle,
-        "canceled_vehicle": canceled_vehicle,
+        "canceled_vehicle": canceled_veh_without_collied_veh,
         # "lane0_queue": lane0_queue,
         # "lane1_queue": lane1_queue,
         # "lane2_queue": lane2_queue,
@@ -192,7 +198,7 @@ def _printSImulationInfoAtEnd(running_list):
         f"traffic volume: {len(total_departed_vehicle) * (3600 / simulation_time)} pcu/h"
     )
     # シミュレーション中に混雑で道路に入れなかった車両の数
-    print("canceled_vehicle Length :", len(canceled_vehicle))
+    print("canceled_vehicle Length :", len(canceled_veh_without_collied_veh))
     # シミュレーション終了時の各レーンのキューの長さ
     print("lane0_queue Length :", len(lane0_queue))
     print("lane1_queue Length :", len(lane1_queue))
@@ -390,7 +396,7 @@ if __name__ == "__main__":
     inflow_pass = int(args[3])  # 車両の流入数 pass
     inflow_exit = int(args[4])  # 車両の流入数 exit
 
-    stats = SimulationStatistics(filename="custom")
+    stats = SimulationStatistics(filename="custom", output_dir="SimulationStatistics/statistics/custom")
 
     # this script has been called from the command line. It will start sumo as a server, then connect and run
     if options.nogui:

@@ -5,7 +5,7 @@ import sys
 from datetime import datetime
 
 import traci
-from func.default_cav import DefaultCAV
+from func.simple_cav import SimpleCAV
 from SimulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 
@@ -25,10 +25,16 @@ r_exit_departed_vehicle = []
 r_pass_exit_vehicle = []
 r_exit_exit_vehicle = []
 canceled_vehicle = []
+canceled_veh_without_collied_veh = []
+collision_history = []  # 各要素は (time, vehicle_id1, vehicle_id2) のタプル
+
 
 lane0_queue = []
 lane1_queue = []
 lane2_queue = []
+
+CONGESTION_SPEED = 11.1  # m/s (40 km/h) 渋滞判定の速度
+MIN_CONGESTED_VEHICLES = 5  # 渋滞判定の最低車両数
 
 
 def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
@@ -36,6 +42,8 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
 
     while _shouldContinueSimWithSimulationTime():
         traci.simulationStep()
+
+        _check_collision()
 
         # このstepでシミュレーション範囲を出た車輌のリスト
         arrived_list = traci.simulation.getArrivedIDList()
@@ -92,16 +100,19 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
 
             # 自車両の情報（位置や速度）を更新
             ins.updateStatus()
+            # 自身の行動(Priority)を更新
+            ins.decideNextActionAndPriority()
+            # 車線変更を実行
+            ins.executeLaneChange()
+            # 車両の速度を更新
+            ins.controlSpeed()
 
             # Laneごとのキューから車両を削除
             _updateLaneQueue(ins.id)
 
-            # 車両の速度を更新
-            ins.controlSpeed()
-
             # TTCを計算
-            if ins.distance is not None:
-                stats.calculate_TTC(ins.distance, ins.leader_speed, ins.speed)
+            if ins.leader_distance is not None:
+                stats.calculate_TTC(ins.leader_distance, ins.leader_speed, ins.speed)
 
         # 車両インスタンスを削除
         if poplist:
@@ -111,7 +122,14 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
         # 車両の追加
         _add_vehicle(alpha)
 
+    collided_vehicles = set()
+    for _, vehicles in collision_history:
+        collided_vehicles.update(vehicles)
+
+    canceled_veh_without_collied_veh = [veh_id for veh_id in canceled_vehicle if veh_id not in collided_vehicles]
+
     _printSImulationInfoAtEnd(running_list)
+    _print_collision_summary()
 
     # シミュレーション結果をcsvファイルに保存
     results = {
@@ -123,7 +141,7 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
         "r_exit_departed_vehicle": r_exit_departed_vehicle,
         "r_pass_exit_vehicle": r_pass_exit_vehicle,
         "r_exit_exit_vehicle": r_exit_exit_vehicle,
-        "canceled_vehicle": canceled_vehicle,
+        "canceled_vehicle": canceled_veh_without_collied_veh,
         # "lane0_queue": lane0_queue,
         # "lane1_queue": lane1_queue,
         # "lane2_queue": lane2_queue,
@@ -178,13 +196,40 @@ def _printSImulationInfoAtEnd(running_list):
         f"traffic volume: {len(total_departed_vehicle) * (3600 / simulation_time)} pcu/h"
     )
     # シミュレーション中に混雑で道路に入れなかった車両の数
-    print("canceled_vehicle Length :", len(canceled_vehicle))
+    print("canceled_vehicle Length :", len(canceled_veh_without_collied_veh))
     # シミュレーション終了時の各レーンのキューの長さ
     print("lane0_queue Length :", len(lane0_queue))
     print("lane1_queue Length :", len(lane1_queue))
     print("lane2_queue Length :", len(lane2_queue))
-
     print("=====================================")
+
+
+def _print_collision_summary():
+    total_collisions = len(collision_history)
+    total_vehicles_involved = sum(len(vehicles) for _, vehicles in collision_history)
+
+    print("\n=== Collision Summary ===")
+    print(f"Total number of collision events: {total_collisions}")
+    print(f"Total number of vehicles involved in collisions: {total_vehicles_involved}")
+    print("\nCollision details:")
+    for time, vehicles in collision_history:
+        print(f"Time {time:.1f}: Collision between vehicles: {', '.join(vehicles)}")
+
+
+def _check_collision():
+    colliding_ids = traci.simulation.getCollidingVehiclesIDList()
+    if len(colliding_ids) > 0:
+        collision_time = traci.simulation.getTime()
+
+        # 同じ衝突が重複して記録されないようにチェック
+        for time, vehicles in collision_history:
+            if abs(time - collision_time) < 1.0 and set(vehicles) == set(colliding_ids):
+                return
+
+        collision_history.append((collision_time, colliding_ids))
+        print(
+            f"Collision detected at time {collision_time:.1f} between vehicles: {', '.join(colliding_ids)}"
+        )
 
 
 def _updateLaneQueue(id: str):
@@ -261,7 +306,7 @@ def _add_vehicle(alpha):
             departPos="base",
             departSpeed="last",
         )
-        instance = DefaultCAV(veh_id, alpha, withAgree=True)
+        instance = SimpleCAV(veh_id, alpha, withAgree=True)
         vehicle_instance.append(instance)
 
         if departLane == "0":
@@ -284,7 +329,7 @@ def _add_vehicle(alpha):
             departPos="base",
             departSpeed="last",
         )
-        instance = DefaultCAV(veh_id, alpha, withAgree=True)
+        instance = SimpleCAV(veh_id, alpha, withAgree=True)
         vehicle_instance.append(instance)
 
         if departLane == "0":
@@ -320,7 +365,7 @@ if __name__ == "__main__":
     inflow_pass = int(args[3])  # 車両の流入数 pass
     inflow_exit = int(args[4])  # 車両の流入数 exit
 
-    stats = SimulationStatistics(filename="default", output_dir="SimulationStatistics/statistics/default")
+    stats = SimulationStatistics(filename="simple", output_dir="SimulationStatistics/statistics/simple")
 
     # this script has been called from the command line. It will start sumo as a server, then connect and run
     if options.nogui:
