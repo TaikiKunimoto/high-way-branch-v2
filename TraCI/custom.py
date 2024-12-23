@@ -59,6 +59,11 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
         congestio_point = _getCongestionPoint()
 
         for index, ins in enumerate(vehicle_instance):
+            # use in debug
+            # if ins.speed < 3:
+            #     print(
+            #         f"Vehicle ID: {ins.id}, Route: {ins.route}, lame : {ins.laneID}, pos: {ins.pos_x}, speed: {ins.speed}, action: {ins.action}, priority: {ins.priority}, status: {ins.status}, providing_cooperative_to_id: {ins.providing_cooperative_to_id}"
+            #     )
             # シミュレーション範囲を出た車両をリスト化
             if ins.id in arrived_list:
                 poplist.append(index)
@@ -104,10 +109,10 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
             ins.updateStatus(congestio_point)
             # 自身の行動(Priority)を更新
             ins.decideNextActionAndPriority()
-            # 車線変更を実行
-            ins.executeLaneChange()
             # 車両の速度を更新
             ins.controlSpeed()
+            # 車線変更を実行
+            ins.executeLaneChange()
 
             # Laneごとのキューから車両を削除
             _updateLaneQueue(ins.id)
@@ -128,7 +133,9 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
     for _, vehicles in collision_history:
         collided_vehicles.update(vehicles)
 
-    canceled_veh_without_collied_veh = [veh_id for veh_id in canceled_vehicle if veh_id not in collided_vehicles]
+    canceled_veh_without_collied_veh = [
+        veh_id for veh_id in canceled_vehicle if veh_id not in collided_vehicles
+    ]
 
     _printSImulationInfoAtEnd(running_list)
     _print_collision_summary()
@@ -396,7 +403,9 @@ if __name__ == "__main__":
     inflow_pass = int(args[3])  # 車両の流入数 pass
     inflow_exit = int(args[4])  # 車両の流入数 exit
 
-    stats = SimulationStatistics(filename="custom", output_dir="SimulationStatistics/statistics/custom")
+    stats = SimulationStatistics(
+        filename="custom", output_dir="SimulationStatistics/statistics/custom"
+    )
 
     # this script has been called from the command line. It will start sumo as a server, then connect and run
     if options.nogui:
