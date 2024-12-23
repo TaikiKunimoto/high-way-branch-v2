@@ -59,6 +59,11 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
         congestio_point = _getCongestionPoint()
 
         for index, ins in enumerate(vehicle_instance):
+            # use in debug
+            # if ins.speed < 3:
+            #     print(
+            #         f"Vehicle ID: {ins.id}, Route: {ins.route}, lame : {ins.laneID}, pos: {ins.pos_x}, speed: {ins.speed}, action: {ins.action}, priority: {ins.priority}, status: {ins.status}, providing_cooperative_to_id: {ins.providing_cooperative_to_id}"
+            #     )
             # シミュレーション範囲を出た車両をリスト化
             if ins.id in arrived_list:
                 poplist.append(index)
@@ -104,10 +109,10 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
             ins.updateStatus(congestio_point)
             # 自身の行動(Priority)を更新
             ins.decideNextActionAndPriority()
-            # 車線変更を実行
-            ins.executeLaneChange()
             # 車両の速度を更新
             ins.controlSpeed()
+            # 車線変更を実行
+            ins.executeLaneChange()
 
             # Laneごとのキューから車両を削除
             _updateLaneQueue(ins.id)
