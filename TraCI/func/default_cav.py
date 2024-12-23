@@ -18,8 +18,11 @@ import traci  # noqa
 maxSpeed = 27  # [m/s]
 maxAccel = 3.0  # [m/ss]
 maxDecel = -5.0  # [m/ss]
+minGap = 2.5  # [m]
 maxPathLen = 10.0  # max path time [s]
 LANE_WIDTH = 3.2  # [m]
+reactionTime = 0.75  # [s]
+frictionCoefficient = 0.7  # 摩擦係数
 
 timeStep = 0.1  # [s]
 
@@ -55,6 +58,9 @@ class DefaultCAV:
         self.status = None  # free, follow, stop, lanechange, turn, yield
         self.distance = None  # 前方車両との距離
         self.leader_speed = None  # 前方車両の速度
+        self.reaction_distance = 0  # 空走距離 [m]
+        self.breaking_distance = 0  # 制動距離 [m]
+        self.safety_gap = self.reaction_distance + self.breaking_distance + minGap
 
         self.pos_x = 0
         self.pos_y = 0
@@ -101,15 +107,15 @@ class DefaultCAV:
 
         self.speed_history = []
 
-    # 車輌の実際の出発時刻を取得
+    """ 車輌の実際の出発時刻を取得 """
     def get_departure_time(self):
         self.departure_time = traci.vehicle.getDeparture(self.id)
 
-    # 車輌の実際の到着時刻を取得
+    """ 車輌の実際の到着時刻を取得 """ 
     def get_arrival_time(self):
         self.arrival_time = traci.simulation.getTime()
 
-    # 自身のステータスを更新
+    """ 自身のステータスを更新 """
     def updateStatus(self):
         self.simTime = traci.simulation.getTime()
         self.speed_history.append(traci.vehicle.getSpeed(self.id))
@@ -139,13 +145,13 @@ class DefaultCAV:
             traci.vehicle.getSpeed(self.leader[0]) if self.leader is not None else None
         )
 
-    # 車線変更が可能なポイントを通過したかどうか
+    """ 車線変更が可能なポイントを通過したかどうか """
     def hasPassedLaneChangePoint(self):
         if traci.vehicle.getLanePosition(self.id) > mergeStartPos:
             return True
         return False
 
-    # 車両の速度を制限速度に基づいて調整
+    """ 車両の速度を制限速度に基づいて調整 """
     def controlSpeed(self):
         # 無効な道路上の場合は制御しない
         if self.road is None or self.road.startswith(":"):
@@ -161,7 +167,7 @@ class DefaultCAV:
             traci.vehicle.slowDown(self.id, speed_limit, safe_duration)
         return
 
-    # 最大減速で速度差を0にするために必要な時間を計算
+    """ 最大減速で速度差を0にするために必要な時間を計算 """
     def _calculateSafeDuration(self, speed_diff):
         if speed_diff <= 0:
             return 0
