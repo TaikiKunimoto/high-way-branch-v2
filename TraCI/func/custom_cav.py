@@ -440,6 +440,7 @@ class CustomCAV:
                         self.receiving_cooperative_from_id
                     ]
                     supporting_vehicle.status = "normal"
+                    supporting_vehicle.priority = 7
                     supporting_vehicle.providing_cooperative_to_id = None
                     supporting_vehicle.do_not_speed_up = False
                     self.receiving_cooperative_from_id = None
@@ -455,6 +456,7 @@ class CustomCAV:
         if self.receiving_cooperative_from_id in vehicle_instances:
             supporting_vehicle = vehicle_instances[self.receiving_cooperative_from_id]
             supporting_vehicle.status = "yielding"
+            supporting_vehicle.priority = 7
             supporting_vehicle.providing_cooperative_to_id = self.id
 
     """ 協調車輌と自身の速度を調整 """
@@ -576,6 +578,7 @@ class CustomCAV:
         if self.receiving_cooperative_from_id in vehicle_instances:
             supporting_vehicle = vehicle_instances[self.receiving_cooperative_from_id]
             supporting_vehicle.status = "normal"
+            supporting_vehicle.priority = 7
             supporting_vehicle.providing_cooperative_to_id = None
             supporting_vehicle.do_not_speed_up = False
             self.receiving_cooperative_from_id = None
