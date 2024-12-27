@@ -1,3 +1,7 @@
+"""
+提案モデル, 車線変更開始位置を動的に決定 & 車線変更に優先度を付与
+"""
+
 import optparse
 import random
 import sys

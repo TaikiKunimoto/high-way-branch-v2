@@ -1,3 +1,7 @@
+"""
+提案の相手となるモデル, 車線変更開始位置は固定 & 車線変更に優先度はない
+"""
+
 import optparse
 import random
 import sys
