@@ -372,7 +372,14 @@ class CustomCAV:
     def executeLaneChange(self):
         if self.action == CarAction.STAY:
             return
-                
+        
+        # 速度向上を目的とする車線変更で協調は行わない
+        # TODO Lane2からの速度向上を目的とする車線変更でどこまで協調させるか検討
+        if self.priority >= 3:
+            cooperation_mode = True
+        else:
+            cooperation_mode = False
+
         if self.last_lane_change_time is not None and self.priority != 7:
             if self.priority >= 5:
                 if self.simTime - self.last_lane_change_time < 1:
@@ -407,31 +414,35 @@ class CustomCAV:
             traci.vehicle.changeLane(self.id, self.lane + lane_change_amount, 0)
             self.status = CarStatus.LANE_CHANGED
         else:
-            if self.receiving_cooperative_from_id in vehicle_instances:
-                supporting_vehicle = vehicle_instances[
-                    self.receiving_cooperative_from_id
-                ]
-                position_diff = self.pos_x - supporting_vehicle.pos_x
-            else:
-                position_diff = -1 * math.inf
-
-            # 車線変更ができず、まだ協調車両がいない場合 or 協調車輌が自身より前方にいる場合
-            if self.receiving_cooperative_from_id is None or position_diff <= 5:
-                # 新たに協調車両を決定するため過去の情報をリセット
-                if self.receiving_cooperative_from_id is not None:
+            if cooperation_mode:
+                if self.receiving_cooperative_from_id in vehicle_instances:
                     supporting_vehicle = vehicle_instances[
                         self.receiving_cooperative_from_id
                     ]
-                    supporting_vehicle.status = CarStatus.NORMAL
-                    supporting_vehicle.priority = 0
-                    supporting_vehicle.providing_cooperative_to_id = None
-                    supporting_vehicle.do_not_speed_up = False
-                    self.receiving_cooperative_from_id = None
+                    position_diff = self.pos_x - supporting_vehicle.pos_x
+                else:
+                    position_diff = -1 * math.inf
 
-                self._decideYieldingVehicle()
-                self._requestCooperation()
-            # 協調車輌と自身の速度を調整
-            self._adjustSpeedForCooperation()
+                # 車線変更ができず、まだ協調車両がいない場合 or 協調車輌が自身より前方にいる場合
+                if self.receiving_cooperative_from_id is None or position_diff <= 5:
+                    # 新たに協調車両を決定するため過去の情報をリセット
+                    if self.receiving_cooperative_from_id is not None:
+                        supporting_vehicle = vehicle_instances[
+                            self.receiving_cooperative_from_id
+                        ]
+                        supporting_vehicle.status = CarStatus.NORMAL
+                        supporting_vehicle.priority = 0
+                        supporting_vehicle.providing_cooperative_to_id = None
+                        supporting_vehicle.do_not_speed_up = False
+                        self.receiving_cooperative_from_id = None
+
+                    self._decideYieldingVehicle()
+                    self._requestCooperation()
+                # 協調車輌と自身の速度を調整
+                self._adjustSpeedForCooperation()
+            else:
+                # 協調が許可されていない場合(速度向上車線変更)の場合は自身の速度のみ調整
+                self._adjustSpeedForCooperation()
 
     """ 適切な車間距離の計算 """
 
