@@ -223,19 +223,26 @@ class CustomCAV:
 
         self._calculateSafetyGap()
 
-        if (self.road != "MainLane1" or self.lane_pos >= MAINLANE_LENGTH - (self.length + minGap) ) and self.status != CarStatus.NORMAL:
+        # 分流車両の車線変更が間に合わない場合優先度を最大にする
+        # 分岐地点の50m手前で車線変更できていない場合は優先度を最大にする
+        if self.road == "MainLane1" and self.lane_pos > MAINLANE_LENGTH - 50 and self.priority >= 5:
+                self.priority = 7
+
+        if self.road != "MainLane1" and self.status != CarStatus.NORMAL:
             self._resetLaneChangeState()
 
         # 車線変更が可能なポイントを通過したら車線変更を可能にする
         if self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
             if self._hasPassedLaneChangePoint(congestion_point):
                 self.lane_change_status = LaneChangeStatus.ALL_ALLOWED
-                self._resetLaneChangeState()
+                # 協調車線変更が可能になったタイミングで行動を初期化, 協調中であればそのステータスは維持
+                self._resetLaneChangeStateKeepYielding()
 
         if self.lane_change_status == LaneChangeStatus.ALL_ALLOWED:
             if self.road != "MainLane1" or self.lane_pos >= MAINLANE_LENGTH - (self.length + minGap):
+                # 車線変更は禁止するが協調中のステータスは維持, 優先度が7の場合は車線変更可能
                 self.lane_change_status = LaneChangeStatus.UNAVAILABLE
-                self._resetLaneChangeState()
+                self._resetLaneChangeStateKeepYielding()
 
         self._getFollowerAndLeader()
 
@@ -246,6 +253,20 @@ class CustomCAV:
         self.required_distance_from_leader = None
         self.lane_change_leader_speed = None
         self.do_not_speed_up = False
+
+        # debug 協調車両同士が正しく設定されているか確認
+        # TODO この関数入れるだけでめっちゃ重くなるから消したい
+        if self.receiving_cooperative_from_id in vehicle_instances:
+            supporting_vehicle = vehicle_instances[self.receiving_cooperative_from_id]
+
+            # 協調車両同士が同一車線にいる場合はその関係を解消（バグ防止）
+            if self.lane == supporting_vehicle.lane:
+                print(f"Error: {self.id} is providing cooperation to {self.receiving_cooperative_from_id} but they are in the same lane")
+                self._resetLaneChangeState()
+            
+            # debug
+            if self.id != supporting_vehicle.providing_cooperative_to_id:
+                print(f"Error: {self.id} is receiving cooperation from {self.receiving_cooperative_from_id} but providing cooperation to {supporting_vehicle.providing_cooperative_to_id}")
 
     """ 自身の行動（priority） を決定 """
 
@@ -375,7 +396,7 @@ class CustomCAV:
     """ 車線変更を実行 """
 
     def executeLaneChange(self):
-        if self.lane_change_status == LaneChangeStatus.UNAVAILABLE:
+        if self.lane_change_status == LaneChangeStatus.UNAVAILABLE and self.priority != 7:
             return
 
         if self.action == CarAction.STAY:
@@ -410,8 +431,7 @@ class CustomCAV:
             self._adjustSpeedForCooperation()
             return
         elif self._canChangeLane(direction):
-            # 意図しない挙動でシミュレーションが止まるのを防ぐ
-            # TODO シミュレーションに衝突がなくなったらこの処理を削除
+            # 意図しない挙動でシミュレーションが止まるのを防ぐ 衝突は消滅したけど一応残した
             if self.road != "MainLane1":
                 self._resetLaneChangeState()
                 return
@@ -601,19 +621,20 @@ class CustomCAV:
             return
 
         # 自身の速度を車線変更に適した速度に調整
-        # TODO ここ変更
+        # 目的車線の前方に車線変更を妨げる車両がいるなら,その車両の速度を参考にする
         if self.lane_change_leader_speed is not None:
             target_speed = self._calculateSupportingSpeed(
                 self.lane_change_leader_speed,
                 self.current_distance_from_leader,
                 self.required_distance_from_leader,
             )
-            # TODO 後方車輌が徐々に減速しているのでsafe_durationがstepごとに大きくなってしまい減速が遅くなるため今は明示的に指定してる
-            # safe_duration = self._calculateSafeDecelDuration(self.speed - target_speed)
+            # 後方車輌が徐々に減速しているのでsafe_durationがstepごとに大きくなってしまい減速が遅くなるため明示的に指定してる
             traci.vehicle.slowDown(self.id, target_speed, 0.5)
+        # 目的車線の前方に車線変更を妨げる車両がいないなら現在の車線のリーダーの速度を参考にする
         elif self.leader_speed is not None:
             target_speed = self.leader_speed
             traci.vehicle.slowDown(self.id, target_speed, 0.5)
+        # 前方に車両がいないなら制限速度に合わせる
         else:
             # 現在のレーンと制限速度を取得
             current_lane = f"{self.road}_{self.lane}"
@@ -716,11 +737,30 @@ class CustomCAV:
             supporting_vehicle.do_not_speed_up = False
             self.receiving_cooperative_from_id = None
 
+    def _resetLaneChangeStateKeepYielding(self):
+        if self.status != CarStatus.YIELDING:
+            self.status = CarStatus.NORMAL
+        self.action = CarAction.STAY
+        self.priority = 0
+        self.required_distance_from_follower = None
+        self.current_distance_from_follower = None
+        self.required_distance_from_leader = None
+        self.current_distance_from_leader = None
+        self.lane_change_leader_speed = None
+        self.do_not_speed_up = False
+        self.lane_change_pending = False
+
+        if self.receiving_cooperative_from_id in vehicle_instances:
+            supporting_vehicle = vehicle_instances[self.receiving_cooperative_from_id]
+            supporting_vehicle.status = CarStatus.NORMAL
+            supporting_vehicle.priority = 0
+            supporting_vehicle.providing_cooperative_to_id = None
+            supporting_vehicle.do_not_speed_up = False
+            self.receiving_cooperative_from_id = None
 
     """ 車線変更が安全かどうか """
     """ 最大加減速度、車間距離、反対車線とのコリジョンを考慮 """
 
-    # TODO 車線変更操作の安全性を判断する関数を改善する
     def _canChangeLane(self, direction):
         target_lane = self.lane + (1 if direction == "left" else -1)
         if target_lane == 1 and self.road == "MainLane1":

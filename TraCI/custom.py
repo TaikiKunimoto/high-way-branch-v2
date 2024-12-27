@@ -112,7 +112,7 @@ def run(inflow_pass=750, inflow_exit=750):
             ins.executeLaneChange()
 
             # use in debug
-            # if ins.id == "33" or ins.id =="35":
+            # if ins.id == "3":
             #     print(
             #         f"Vehicle ID: {ins.id}, Route: {ins.route}, lane : {ins.laneID}, pos: {ins.pos_x} action: {ins.action}, priority: {ins.priority}, status: {ins.status}, receiving_cooperative_from_id: {ins.receiving_cooperative_from_id}, providing_cooperative_to_id: {ins.providing_cooperative_to_id}"
             #     )
