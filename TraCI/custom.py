@@ -340,7 +340,7 @@ def _add_vehicle():
             departPos="base",
             departSpeed="last",
         )
-        instance = CustomCAV(veh_id, withAgree=True)
+        instance = CustomCAV(veh_id)
         vehicle_instance.append(instance)
 
         if departLane == "0":
@@ -363,7 +363,7 @@ def _add_vehicle():
             departPos="base",
             departSpeed="last",
         )
-        instance = CustomCAV(veh_id, withAgree=True)
+        instance = CustomCAV(veh_id)
         vehicle_instance.append(instance)
 
         if departLane == "0":
