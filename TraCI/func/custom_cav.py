@@ -182,7 +182,7 @@ class CustomCAV:
 
         # 車線変更が可能なポイントを通過したら車線変更を可能にする
         if self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
-            if self.hasPassedLaneChangePoint(congestion_point):
+            if self._hasPassedLaneChangePoint(congestion_point):
                 self.lane_change_status = LaneChangeStatus.ALL_ALLOWED
 
         if self.lane_change_status == LaneChangeStatus.ALL_ALLOWED:
@@ -198,6 +198,162 @@ class CustomCAV:
         self.required_distance_from_leader = None
         self.lane_change_leader_speed = None
         self.do_not_speed_up = False
+
+    """ 自身の行動（priority） を決定 """
+
+    def decideNextActionAndPriority(self):
+        # 無効な道路上の場合は何もしない
+        if self.road is None or self.road.startswith(":"):
+            self.action = CarAction.STAY
+            self.priority = 0
+
+        # 車線変更中の場合は行動を継続
+        if (
+            self.status == CarStatus.LANE_CHANGING
+            or self.status == CarStatus.YIELDING
+            or self.status == CarStatus.LANE_CHANGED
+        ):
+            return
+
+        # 現在のレーンと経路に基づくルールを取得
+        key = (self.lane, self.route)
+        rule = self.lane_change_rules.get(key)
+
+        if not rule:
+            self.priority = 0
+
+        # 条件を満たすか確認
+        if all(condition() for condition in rule["conditions"]):
+            self.action = rule["action"]
+            self.priority = rule["priority"]
+        else:
+            self.action = CarAction.STAY
+            self.priority = 1
+
+        if self.action != CarAction.STAY:
+            self.status = CarStatus.LANE_CHANGING
+
+    """ 車両の速度を調整 """
+
+    def controlSpeed(self):
+        if self.leader_distance is not None and self.leader_distance < minGap:
+            self._emergencyBreak(self.leader_speed)
+            return
+
+        # 協調フェーズの場合は加速は行わない
+        if (
+            self.status == CarStatus.YIELDING
+            or self.status == CarStatus.LANE_CHANGING
+            or self.status == CarStatus.LANE_CHANGED
+        ):
+            self.do_not_speed_up = True
+        else:
+            self.do_not_speed_up = False
+
+        # 現在のレーンと制限速度を取得
+        current_lane = f"{self.road}_{self.lane}"
+        speed_limit = traci.lane.getMaxSpeed(current_lane)
+
+        # 前方車両がいない場合
+        if self.leader is None:
+            self._controlSpeedBySpeedLimit(speed_limit)
+            return
+
+        # 前方車両がいる場合
+        else:
+            speed_diff = self.speed - self.leader_speed
+            min_duration = self._calculateSafeDecelDuration(speed_diff)
+            ttc_with_safety_margin = self._calculateTTC(
+                self.leader_distance, speed_diff
+            )
+            # 前方車両との距離 > safety_gap の場合
+            if self.leader_distance >= self.safety_gap:
+                if speed_diff <= 0:
+                    self._controlSpeedBySpeedLimit(speed_limit)
+                    return
+                elif min_duration < ttc_with_safety_margin:
+                    self._controlSpeedBySpeedLimit(speed_limit)
+                    return
+                else:
+                    # 通常の減速
+                    duration = min(ttc_with_safety_margin, min_duration)
+                    traci.vehicle.slowDown(self.id, self.leader_speed, duration)
+                    return
+
+            # 前方車両との距離 < safety_gap の場合
+            else:
+                if self.do_not_speed_up:
+                    return
+                if speed_diff >= 0:
+                    # 通常の減速
+                    if self.leader_speed > 1:
+                        target_speed = self.leader_speed - 1
+                    else:
+                        target_speed = 0
+                    duration = min(ttc_with_safety_margin, min_duration)
+                    traci.vehicle.slowDown(self.id, target_speed, duration)
+                else:
+                    return
+
+    """ 車線変更を実行 """
+
+    def executeLaneChange(self):
+        if self.action == CarAction.STAY:
+            return
+                
+        if self.last_lane_change_time is not None and self.priority != 7:
+            if self.priority >= 5:
+                if self.simTime - self.last_lane_change_time < 5:
+                    return
+            else:
+                if self.simTime - self.last_lane_change_time < 10:
+                    return
+
+        direction = "left" if self.action == CarAction.CHANGE_LEFT else "right"
+        lane_change_amount = 1 if direction == "left" else -1
+
+        if self._canChangeLane(direction):
+            # 意図しない挙動でシミュレーションが止まるのを防ぐ
+            # TODO シミュレーションに衝突がなくなったらこの処理を削除
+            if self.road != "MainLane1":
+                self._resetLaneChangeState()
+                return
+            
+            self.last_lane_change_time = self.simTime
+
+            # 車線変更が可能な場合は実行
+            traci.vehicle.changeLane(self.id, self.lane + lane_change_amount, 0)
+            self.status = CarStatus.LANE_CHANGED
+        else:
+            if self.receiving_cooperative_from_id in vehicle_instances:
+                supporting_vehicle = vehicle_instances[
+                    self.receiving_cooperative_from_id
+                ]
+                # supporting_vehicle_pos = traci.vehicle.getLanePosition(
+                #     supporting_vehicle.id
+                # )
+                # own_pos = traci.vehicle.getLanePosition(self.id)
+                position_diff = self.pos_x - supporting_vehicle.pos_x
+            else:
+                position_diff = -1 * math.inf
+
+            # 車線変更ができず、まだ協調車両がいない場合 or 協調車輌が自身より前方にいる場合
+            if self.receiving_cooperative_from_id is None or position_diff <= 5:
+                # 新たに協調車両を決定するため過去の情報をリセット
+                if self.receiving_cooperative_from_id is not None:
+                    supporting_vehicle = vehicle_instances[
+                        self.receiving_cooperative_from_id
+                    ]
+                    supporting_vehicle.status = CarStatus.NORMAL
+                    supporting_vehicle.priority = 0
+                    supporting_vehicle.providing_cooperative_to_id = None
+                    supporting_vehicle.do_not_speed_up = False
+                    self.receiving_cooperative_from_id = None
+
+                self._decideYieldingVehicle()
+                self._requestCooperation()
+            # 協調車輌と自身の速度を調整
+            self._adjustSpeedForCooperation()
 
     """ 適切な車間距離の計算 """
 
@@ -269,7 +425,7 @@ class CustomCAV:
 
     """ 車線変更が可能なポイントを通過したかどうか """
 
-    def hasPassedLaneChangePoint(self, congestion_point):
+    def _hasPassedLaneChangePoint(self, congestion_point):
         lane_length = traci.lane.getLength("MainLane1_2")
         current_pos = traci.vehicle.getLanePosition(self.id)
 
@@ -281,68 +437,6 @@ class CustomCAV:
         if current_pos > merge_start_pos:
             return True
         return False
-
-    """ 車両の速度を調整 """
-
-    def controlSpeed(self):
-        if self.leader_distance is not None and self.leader_distance < minGap:
-            self._emergencyBreak(self.leader_speed)
-            return
-
-        # 協調フェーズの場合は加速は行わない
-        if (
-            self.status == CarStatus.YIELDING
-            or self.status == CarStatus.LANE_CHANGING
-            or self.status == CarStatus.LANE_CHANGED
-        ):
-            self.do_not_speed_up = True
-        else:
-            self.do_not_speed_up = False
-
-        # 現在のレーンと制限速度を取得
-        current_lane = f"{self.road}_{self.lane}"
-        speed_limit = traci.lane.getMaxSpeed(current_lane)
-
-        # 前方車両がいない場合
-        if self.leader is None:
-            self._controlSpeedBySpeedLimit(speed_limit)
-            return
-
-        # 前方車両がいる場合
-        else:
-            speed_diff = self.speed - self.leader_speed
-            min_duration = self._calculateSafeDecelDuration(speed_diff)
-            ttc_with_safety_margin = self._calculateTTC(
-                self.leader_distance, speed_diff
-            )
-            # 前方車両との距離 > safety_gap の場合
-            if self.leader_distance >= self.safety_gap:
-                if speed_diff <= 0:
-                    self._controlSpeedBySpeedLimit(speed_limit)
-                    return
-                elif min_duration < ttc_with_safety_margin:
-                    self._controlSpeedBySpeedLimit(speed_limit)
-                    return
-                else:
-                    # 通常の減速
-                    duration = min(ttc_with_safety_margin, min_duration)
-                    traci.vehicle.slowDown(self.id, self.leader_speed, duration)
-                    return
-
-            # 前方車両との距離 < safety_gap の場合
-            else:
-                if self.do_not_speed_up:
-                    return
-                if speed_diff >= 0:
-                    # 通常の減速
-                    if self.leader_speed > 1:
-                        target_speed = self.leader_speed - 1
-                    else:
-                        target_speed = 0
-                    duration = min(ttc_with_safety_margin, min_duration)
-                    traci.vehicle.slowDown(self.id, target_speed, duration)
-                else:
-                    return
 
     """ 制限速度に基づいて速度を調整 """
 
@@ -387,66 +481,6 @@ class CustomCAV:
         targetSpeed = min(targetSpeed, self.speed, 1)
         self.emergency_brake_counter += 1
         traci.vehicle.setSpeed(self.id, targetSpeed)
-
-    """ 車線変更を実行 """
-
-    def executeLaneChange(self):
-        if self.action == CarAction.STAY:
-            return
-                
-        if self.last_lane_change_time is not None and self.priority != 7:
-            if self.priority >= 5:
-                if self.simTime - self.last_lane_change_time < 5:
-                    return
-            else:
-                if self.simTime - self.last_lane_change_time < 10:
-                    return
-
-        direction = "left" if self.action == CarAction.CHANGE_LEFT else "right"
-        lane_change_amount = 1 if direction == "left" else -1
-
-        if self._canChangeLane(direction):
-            # 意図しない挙動でシミュレーションが止まるのを防ぐ
-            # TODO シミュレーションに衝突がなくなったらこの処理を削除
-            if self.road != "MainLane1":
-                self._resetLaneChangeState()
-                return
-            
-            self.last_lane_change_time = self.simTime
-
-            # 車線変更が可能な場合は実行
-            traci.vehicle.changeLane(self.id, self.lane + lane_change_amount, 0)
-            self.status = CarStatus.LANE_CHANGED
-        else:
-            if self.receiving_cooperative_from_id in vehicle_instances:
-                supporting_vehicle = vehicle_instances[
-                    self.receiving_cooperative_from_id
-                ]
-                # supporting_vehicle_pos = traci.vehicle.getLanePosition(
-                #     supporting_vehicle.id
-                # )
-                # own_pos = traci.vehicle.getLanePosition(self.id)
-                position_diff = self.pos_x - supporting_vehicle.pos_x
-            else:
-                position_diff = -1 * math.inf
-
-            # 車線変更ができず、まだ協調車両がいない場合 or 協調車輌が自身より前方にいる場合
-            if self.receiving_cooperative_from_id is None or position_diff <= 5:
-                # 新たに協調車両を決定するため過去の情報をリセット
-                if self.receiving_cooperative_from_id is not None:
-                    supporting_vehicle = vehicle_instances[
-                        self.receiving_cooperative_from_id
-                    ]
-                    supporting_vehicle.status = CarStatus.NORMAL
-                    supporting_vehicle.priority = 0
-                    supporting_vehicle.providing_cooperative_to_id = None
-                    supporting_vehicle.do_not_speed_up = False
-                    self.receiving_cooperative_from_id = None
-
-                self._decideYieldingVehicle()
-                self._requestCooperation()
-            # 協調車輌と自身の速度を調整
-            self._adjustSpeedForCooperation()
 
     """ 協調車輌に協調を要求 """
 
@@ -581,39 +615,6 @@ class CustomCAV:
             supporting_vehicle.do_not_speed_up = False
             self.receiving_cooperative_from_id = None
 
-    """ 自身の行動（priority） を決定 """
-
-    def decideNextActionAndPriority(self):
-        # 無効な道路上の場合は何もしない
-        if self.road is None or self.road.startswith(":"):
-            self.action = CarAction.STAY
-            self.priority = 0
-
-        # 車線変更中の場合は行動を継続
-        if (
-            self.status == CarStatus.LANE_CHANGING
-            or self.status == CarStatus.YIELDING
-            or self.status == CarStatus.LANE_CHANGED
-        ):
-            return
-
-        # 現在のレーンと経路に基づくルールを取得
-        key = (self.lane, self.route)
-        rule = self.lane_change_rules.get(key)
-
-        if not rule:
-            self.priority = 0
-
-        # 条件を満たすか確認
-        if all(condition() for condition in rule["conditions"]):
-            self.action = rule["action"]
-            self.priority = rule["priority"]
-        else:
-            self.action = CarAction.STAY
-            self.priority = 1
-
-        if self.action != CarAction.STAY:
-            self.status = CarStatus.LANE_CHANGING
 
     """ 車線変更が安全かどうか """
     """ 最大加減速度、車間距離、反対車線とのコリジョンを考慮 """
