@@ -12,7 +12,6 @@ from sumolib import checkBinary
 simulation_time = 300.0  # 5min
 
 veh_id = 0
-alpha = 0.0
 
 departTime_r_pass = []
 departTime_r_exit = []
@@ -37,7 +36,7 @@ CONGESTION_SPEED = 11.1  # m/s (40 km/h) 渋滞判定の速度
 MIN_CONGESTED_VEHICLES = 5  # 渋滞判定の最低車両数
 
 
-def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
+def run(inflow_pass=750, inflow_exit=750):
     _set_environment(inflow_pass, inflow_exit)
 
     while _shouldContinueSimWithSimulationTime():
@@ -127,7 +126,7 @@ def run(alpha=0.0, inflow_pass=750, inflow_exit=750):
                 vehicle_instance.pop(i)
 
         # 車両の追加
-        _add_vehicle(alpha)
+        _add_vehicle()
 
     collided_vehicles = set()
     for _, vehicles in collision_history:
@@ -326,12 +325,10 @@ def _shouldContinueSimWithSimulationTime():
     return True if sumo_time < simulation_time else False
 
 
-def _add_vehicle(alpha):
+def _add_vehicle():
     global veh_id
     global departTime_r_pass, departTime_r_exit
     sumo_time = traci.simulation.getTime()
-
-    alpha = float(alpha)
 
     # if sumo_time in departTime_r_pass:
     if sumo_time in departTime_r_pass:
@@ -344,7 +341,7 @@ def _add_vehicle(alpha):
             departPos="base",
             departSpeed="last",
         )
-        instance = CustomCAV(veh_id, alpha, withAgree=True)
+        instance = CustomCAV(veh_id, withAgree=True)
         vehicle_instance.append(instance)
 
         if departLane == "0":
@@ -367,7 +364,7 @@ def _add_vehicle(alpha):
             departPos="base",
             departSpeed="last",
         )
-        instance = CustomCAV(veh_id, alpha, withAgree=True)
+        instance = CustomCAV(veh_id, withAgree=True)
         vehicle_instance.append(instance)
 
         if departLane == "0":
@@ -397,7 +394,6 @@ if __name__ == "__main__":
     # コマンドライン引数を取得
     options = _get_options()
     args = sys.argv
-    alpha = str(args[1])  # 現在は使用していない
     seed = args[2]  # 乱数のシード(等しいseedで実行すると同じ結果が得られる)
     random.seed(seed)
     inflow_pass = int(args[3])  # 車両の流入数 pass
@@ -414,4 +410,4 @@ if __name__ == "__main__":
         sumoBinary = checkBinary("sumo-gui")
 
     _startSim()
-    run(alpha, inflow_pass, inflow_exit)
+    run(inflow_pass, inflow_exit)

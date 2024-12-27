@@ -31,7 +31,7 @@ vehicle_instances = {}  # グローバルな車輌管理辞書
 
 class SimpleCAV:
     # constructor
-    def __init__(self, vehID, alpha, withAgree=False):
+    def __init__(self, vehID, withAgree=False):
         self.id = str(vehID)
         vehicle_instances[self.id] = self
 

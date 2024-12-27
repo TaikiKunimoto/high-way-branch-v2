@@ -33,7 +33,7 @@ mergeStartPos = 1100  # [m] 単純な手法の場合の車線変更開始地点(
 
 class DefaultCAV:
     # constructor
-    def __init__(self, vehID, alpha, withAgree=False):
+    def __init__(self, vehID, withAgree=False):
         self.id = str(vehID)
         # 車両のデフォルトの車線変更モードを設定
         traci.vehicle.setLaneChangeMode(vehID=self.id, lcm=0b000000000000)
@@ -82,7 +82,6 @@ class DefaultCAV:
             "indigo",
             "royalblue",
         ][vehID % 7]
-        self.alpha = alpha
         self.yetJudgedList = []
 
         self.WithAgreementPhase = withAgree
