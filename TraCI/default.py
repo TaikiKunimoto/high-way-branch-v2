@@ -1,3 +1,7 @@
+"""
+SUMOのデフォルトを使用したモデル
+"""
+
 import optparse
 import os
 import random

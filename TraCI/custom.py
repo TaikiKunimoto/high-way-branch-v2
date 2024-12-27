@@ -1,3 +1,7 @@
+"""
+提案モデル, 車線変更開始位置を動的に決定 & 車線変更に優先度を付与
+"""
+
 import optparse
 import random
 import sys
@@ -57,11 +61,6 @@ def run(inflow_pass=750, inflow_exit=750):
         congestio_point = _getCongestionPoint()
 
         for index, ins in enumerate(vehicle_instance):
-            # use in debug
-            # if ins.speed < 3:
-            #     print(
-            #         f"Vehicle ID: {ins.id}, Route: {ins.route}, lame : {ins.laneID}, pos: {ins.pos_x}, speed: {ins.speed}, action: {ins.action}, priority: {ins.priority}, status: {ins.status}, providing_cooperative_to_id: {ins.providing_cooperative_to_id}"
-            #     )
             # シミュレーション範囲を出た車両をリスト化
             if ins.id in arrived_list:
                 poplist.append(index)
@@ -111,6 +110,12 @@ def run(inflow_pass=750, inflow_exit=750):
             ins.controlSpeed()
             # 車線変更を実行
             ins.executeLaneChange()
+
+            # use in debug
+            # if ins.id == "0" or ins.id =="11" or ins.id == "8":
+            #     print(
+            #         f"Vehicle ID: {ins.id}, Route: {ins.route}, lane : {ins.laneID}, pos: {ins.pos_x} action: {ins.action}, priority: {ins.priority}, status: {ins.status}, receiving_cooperative_from_id: {ins.receiving_cooperative_from_id}, providing_cooperative_to_id: {ins.providing_cooperative_to_id}"
+            #     )
 
             # Laneごとのキューから車両を削除
             _updateLaneQueue(ins.id)
@@ -226,7 +231,7 @@ def _print_collision_summary():
 def _check_collision():
     colliding_ids = traci.simulation.getCollidingVehiclesIDList()
     if len(colliding_ids) > 0:
-        collision_time = traci.simulation.getTime()
+        collision_time = traci.simulation.getTime() - 0.1
 
         # 同じ衝突が重複して記録されないようにチェック
         for time, vehicles in collision_history:
