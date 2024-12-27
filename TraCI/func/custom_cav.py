@@ -20,6 +20,7 @@ frictionCoefficient = 0.7  # 摩擦係数
 LANE_WIDTH = 3.2  # [m]
 LANE_CHANGE_MARGIN = 400.0  # [m] 渋滞発生地点の何メートル手前から車線変更を許可するか
 SPEED_IMPROVEMENT_THRESHOLD = 40.0  # 車線変更による速度改善の閾値 [%]
+MAINLANE_LENGTH = 1500  # [m]
 
 timeStep = 0.1  # [s]
 
@@ -61,6 +62,7 @@ class CustomCAV:
         self.left_leaders = None  # 左前方車両
         self.right_leaders = None  # 右前方車両
 
+        self.lane_pos = None
         self.pos_x = None
         self.pos_y = None
         self.angle = None
@@ -205,6 +207,7 @@ class CustomCAV:
         pos = traci.vehicle.getPosition(self.id)
         self.pos_x = pos[0]
         self.pos_y = pos[1]
+        self.lane_pos = traci.vehicle.getLanePosition(self.id)
 
         self.angle = traci.vehicle.getAngle(self.id)
         self.speed = traci.vehicle.getSpeed(self.id)
@@ -217,9 +220,10 @@ class CustomCAV:
         self.leader_speed = (
             traci.vehicle.getSpeed(self.leader[0]) if self.leader is not None else None
         )
+
         self._calculateSafetyGap()
 
-        if self.road != "MainLane1" and self.status != CarStatus.NORMAL:
+        if (self.road != "MainLane1" or self.lane_pos >= MAINLANE_LENGTH - (self.length + minGap) ) and self.status != CarStatus.NORMAL:
             self._resetLaneChangeState()
 
         # 車線変更が可能なポイントを通過したら車線変更を可能にする
@@ -229,8 +233,9 @@ class CustomCAV:
                 self._resetLaneChangeState()
 
         if self.lane_change_status == LaneChangeStatus.ALL_ALLOWED:
-            if self.road != "MainLane1":
+            if self.road != "MainLane1" or self.lane_pos >= MAINLANE_LENGTH - (self.length + minGap):
                 self.lane_change_status = LaneChangeStatus.UNAVAILABLE
+                self._resetLaneChangeState()
 
         self._getFollowerAndLeader()
 
@@ -370,6 +375,9 @@ class CustomCAV:
     """ 車線変更を実行 """
 
     def executeLaneChange(self):
+        if self.lane_change_status == LaneChangeStatus.UNAVAILABLE:
+            return
+
         if self.action == CarAction.STAY:
             return
         
@@ -463,7 +471,7 @@ class CustomCAV:
         if self.road is None or self.lane is None or self.road != "MainLane1":
             return
 
-        own_position = traci.vehicle.getLanePosition(self.id)
+        own_position = self.lane_pos
 
         # レーン番号に基づいて確認すべき隣接レーンを決定
         check_lanes = [("current", self.lane)]
@@ -521,7 +529,7 @@ class CustomCAV:
 
     def _hasPassedLaneChangePoint(self, congestion_point):
         lane_length = traci.lane.getLength("MainLane1_2")
-        current_pos = traci.vehicle.getLanePosition(self.id)
+        current_pos = self.lane_pos
 
         if congestion_point is None:
             merge_start_pos = lane_length - LANE_CHANGE_MARGIN
@@ -615,7 +623,7 @@ class CustomCAV:
         # 協調車両がいる場合は相手の速度も調整
         if self.receiving_cooperative_from_id:
             supporting_vehicle = vehicle_instances[self.receiving_cooperative_from_id]
-            own_position = traci.vehicle.getLanePosition(self.id)
+            own_position = self.lane_pos
 
             supporting_vehicle._adjustSupportingSpeed(
                 self.speed,
@@ -716,7 +724,7 @@ class CustomCAV:
     def _canChangeLane(self, direction):
         target_lane = self.lane + (1 if direction == "left" else -1)
         if target_lane == 1 and self.road == "MainLane1":
-            own_pos = traci.vehicle.getLanePosition(self.id)
+            own_pos = self.lane_pos
             check_range = self.safety_gap
 
             opposite_lane = 2 if self.lane == 0 else 0
