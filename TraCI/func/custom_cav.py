@@ -12,7 +12,7 @@ else:
 import traci  # noqa
 
 maxSpeed = 27  # [m/s]
-maxAccel = 3.0  # [m/ss]
+maxAccel = 5.0  # [m/ss]
 maxDecel = -5.0  # [m/ss]
 minGap = 2.8  # [m]
 reactionTime = 0.75  # [s]
@@ -28,7 +28,7 @@ vehicle_instances = {}  # グローバルな車輌管理辞書
 
 class CustomCAV:
     # constructor
-    def __init__(self, vehID, withAgree=False):
+    def __init__(self, vehID):
         self.id = str(vehID)
         vehicle_instances[self.id] = self
 
@@ -49,17 +49,20 @@ class CustomCAV:
         self.action = CarAction.STAY
         self.priority = 0  # 0(yielding or None), 1(low), 2, 3, 4, 5, 6(high), 7(emergency)
         self.last_lane_change_time = None # Sumo Time
+        self.lane_change_pending = False
         self.receiving_cooperative_from_id = None  # 協調中に譲ってもらう車両のID
         self.providing_cooperative_to_id = None  # 協調して譲る車両のID
         self.leader_distance = None  # 前方車両との距離
         self.leader_speed = None  # 前方車両の速度
+        self.current_lane_leaders = None  # 現在のレーンの前方車両
+        self.current_lane_followers = None
         self.left_followers = None  # 左後続車両
         self.right_followers = None  # 右後続車両
         self.left_leaders = None  # 左前方車両
         self.right_leaders = None  # 右前方車両
 
-        self.pos_x = 0
-        self.pos_y = 0
+        self.pos_x = None
+        self.pos_y = None
         self.angle = None
         self.speed = 0
         self.accel = 0
@@ -80,9 +83,8 @@ class CustomCAV:
 
         self.lane_change_leader_speed = None
 
-        self.simTime = 0
+        self.simTime = traci.simulation.getTime()
 
-        self.WithAgreementPhase = withAgree
         self.isWaitAgree = False
 
         self.collision_counter = 0
@@ -97,6 +99,14 @@ class CustomCAV:
         """ 車線変更ルールテーブルの初期化 """
         self.lane_change_rules = {
             # Lane 2のルール
+            (2, "speed"): {
+                "action": CarAction.CHANGE_RIGHT,
+                "priority": 0,
+                "conditions": [
+                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
+                    lambda: self._isPredictedSpeedIncrease("right"),
+                ],
+            },
             (2, "r_exit"): {"action": CarAction.STAY, "priority": 1, "conditions": []},
             (2, "r_pass"): {
                 "action": CarAction.CHANGE_RIGHT,
@@ -107,6 +117,22 @@ class CustomCAV:
                 ],
             },
             # Lane 1のルール
+            (1, "speed_left"): {
+                "action": CarAction.CHANGE_LEFT,
+                "priority": 0,
+                "conditions": [
+                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
+                    lambda: self._isPredictedSpeedIncrease("left"),
+                ],
+            },
+            (1, "speed_right"): {
+                "action": CarAction.CHANGE_RIGHT,
+                "priority": 0,
+                "conditions": [
+                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
+                    lambda: self._isPredictedSpeedIncrease("right"),
+                ],
+            },
             (1, "r_exit"): {
                 "action": CarAction.CHANGE_LEFT,
                 "priority": 5,
@@ -114,15 +140,31 @@ class CustomCAV:
                     lambda: self.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
                 ],
             },
-            (1, "r_pass"): {
+            (1, "r_pass_left"): {
+                "action": CarAction.CHANGE_LEFT,
+                "priority": 2,
+                "conditions": [
+                    lambda: self.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
+                    lambda: self._isPredictedSpeedIncrease("left"),
+                ],
+            },
+            (1, "r_pass_right"): {
                 "action": CarAction.CHANGE_RIGHT,
                 "priority": 4,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY or self.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
+                    lambda: self.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
                     lambda: self._isPredictedSpeedIncrease("right"),
                 ],
             },
             # Lane 0のルール
+            (0, "speed"): {
+                "action": CarAction.CHANGE_LEFT,
+                "priority": 0,
+                "conditions": [
+                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
+                    lambda: self._isPredictedSpeedIncrease("left"),
+                ],
+            },
             (0, "r_exit"): {
                 "action": CarAction.CHANGE_LEFT,
                 "priority": 6,
@@ -184,12 +226,13 @@ class CustomCAV:
         if self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
             if self._hasPassedLaneChangePoint(congestion_point):
                 self.lane_change_status = LaneChangeStatus.ALL_ALLOWED
+                self._resetLaneChangeState()
 
         if self.lane_change_status == LaneChangeStatus.ALL_ALLOWED:
             if self.road != "MainLane1":
                 self.lane_change_status = LaneChangeStatus.UNAVAILABLE
 
-        self._getFollowerAndLeaderRunningAnotherLane()
+        self._getFollowerAndLeader()
 
         # 車線変更が可能かを判断するリストをリセット
         self.current_distance_from_follower = None
@@ -203,24 +246,53 @@ class CustomCAV:
 
     def decideNextActionAndPriority(self):
         # 無効な道路上の場合は何もしない
-        if self.road is None or self.road.startswith(":"):
+        if self.road != "MainLane1":
             self.action = CarAction.STAY
             self.priority = 0
 
         # 車線変更中の場合は行動を継続
         if (
-            self.status == CarStatus.LANE_CHANGING
+            self.lane_change_status == LaneChangeStatus.ALL_ALLOWED 
+            and (self.status == CarStatus.LANE_CHANGING
             or self.status == CarStatus.YIELDING
-            or self.status == CarStatus.LANE_CHANGED
+            or self.status == CarStatus.LANE_CHANGED)
         ):
             return
 
         # 現在のレーンと経路に基づくルールを取得
-        key = (self.lane, self.route)
-        rule = self.lane_change_rules.get(key)
+        if self.lane != 1:
+            base_key = (self.lane, self.route)
+            speed_key = (self.lane, "speed")
+        else:
+            if self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
+                base_key = (self.lane, self.route)
+                if self._isPredictedSpeedIncrease("left"):
+                    speed_key = (self.lane, "speed_left")
+                elif self._isPredictedSpeedIncrease("right"):
+                    speed_key = (self.lane, "speed_right")
+                else:
+                    speed_key = None
+            else:
+                speed_key = None
+                if self.route == "r_exit":
+                    base_key = (self.lane, self.route)
+                else:
+                    if self._isPredictedSpeedIncrease("left"):
+                        base_key = (self.lane, self.route + "_left")
+                    elif self._isPredictedSpeedIncrease("right"):
+                        base_key = (self.lane, self.route + "_right")
+                    else:
+                        base_key = (self.lane, self.route)
+
+        if self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
+            rule = self.lane_change_rules.get(speed_key)
+        else:
+            rule = self.lane_change_rules.get(base_key)
 
         if not rule:
+            self.action = CarAction.STAY
             self.priority = 0
+            return
 
         # 条件を満たすか確認
         if all(condition() for condition in rule["conditions"]):
@@ -303,16 +375,22 @@ class CustomCAV:
                 
         if self.last_lane_change_time is not None and self.priority != 7:
             if self.priority >= 5:
-                if self.simTime - self.last_lane_change_time < 5:
-                    return
+                if self.simTime - self.last_lane_change_time < 3:
+                    self.lane_change_pending = True
+                else:
+                    self.lane_change_pending = False
             else:
-                if self.simTime - self.last_lane_change_time < 10:
-                    return
+                if self.simTime - self.last_lane_change_time < 8:
+                    self.lane_change_pending = True
+                else:
+                    self.lane_change_pending = False
+        else:
+            self.lane_change_pending = False
 
         direction = "left" if self.action == CarAction.CHANGE_LEFT else "right"
         lane_change_amount = 1 if direction == "left" else -1
 
-        if self._canChangeLane(direction):
+        if self._canChangeLane(direction) and not self.lane_change_pending:
             # 意図しない挙動でシミュレーションが止まるのを防ぐ
             # TODO シミュレーションに衝突がなくなったらこの処理を削除
             if self.road != "MainLane1":
@@ -329,10 +407,6 @@ class CustomCAV:
                 supporting_vehicle = vehicle_instances[
                     self.receiving_cooperative_from_id
                 ]
-                # supporting_vehicle_pos = traci.vehicle.getLanePosition(
-                #     supporting_vehicle.id
-                # )
-                # own_pos = traci.vehicle.getLanePosition(self.id)
                 position_diff = self.pos_x - supporting_vehicle.pos_x
             else:
                 position_diff = -1 * math.inf
@@ -368,7 +442,7 @@ class CustomCAV:
 
     """ 後続車輌と先行車輌を取得する """
 
-    def _getFollowerAndLeaderRunningAnotherLane(self):
+    def _getFollowerAndLeader(self):
         self._resetFollowerAndLeaderVehicles()
 
         if self.road is None or self.lane is None or self.road != "MainLane1":
@@ -377,7 +451,7 @@ class CustomCAV:
         own_position = traci.vehicle.getLanePosition(self.id)
 
         # レーン番号に基づいて確認すべき隣接レーンを決定
-        check_lanes = []
+        check_lanes = [("current", self.lane)]
         if self.lane == 0:
             check_lanes.append(("left", 1))  # レーン0の場合、左側のレーン1をチェック
         elif self.lane == 1:
@@ -416,11 +490,16 @@ class CustomCAV:
             elif direction == "right":
                 self.right_followers = followers
                 self.right_leaders = leaders
+            elif direction == "current":
+                self.current_lane_followers = followers
+                self.current_lane_leaders = leaders
 
     def _resetFollowerAndLeaderVehicles(self):
+        self.current_lane_followers = None
+        self.current_lane_leaders = None
         self.left_followers = None
-        self.right_followers = None
         self.left_leaders = None
+        self.right_followers = None
         self.right_leaders = None
 
     """ 車線変更が可能なポイントを通過したかどうか """
@@ -500,10 +579,9 @@ class CustomCAV:
 
         if self.receiving_cooperative_from_id:
             supporting_vehicle = vehicle_instances[self.receiving_cooperative_from_id]
-            supporting_vehicle_speed = supporting_vehicle.speed
             own_position = traci.vehicle.getLanePosition(self.id)
 
-            # 車線変更に適した速度に調整
+            # 自身の速度を車線変更に適した速度に調整
             # TODO ここ変更
             if self.lane_change_leader_speed is not None:
                 target_speed = self._calculateSupportingSpeed(
@@ -540,7 +618,6 @@ class CustomCAV:
             self._emergencyBreak(self.leader_speed)
             return
 
-        own_position = traci.vehicle.getLanePosition(self.id)
         # 安全な車間距離を確保しつつ速度を調整
         target_speed = self._calculateSupportingSpeed(
             requesting_speed, current_distance, required_distance
@@ -606,6 +683,7 @@ class CustomCAV:
         self.current_distance_from_leader = None
         self.lane_change_leader_speed = None
         self.do_not_speed_up = False
+        self.lane_change_pending = False
 
         if self.receiving_cooperative_from_id in vehicle_instances:
             supporting_vehicle = vehicle_instances[self.receiving_cooperative_from_id]
@@ -706,6 +784,18 @@ class CustomCAV:
 
         if not target_lane_leaders:
             return True
+        
+        current_lane_leader_speeds = [
+            traci.vehicle.getSpeed(leader[0]) for leader in self.current_lane_leaders
+        ]
+        if len(current_lane_leader_speeds) > 0:
+            current_lane_avg_leader_speed = sum(current_lane_leader_speeds) / len(
+                current_lane_leader_speeds
+            )
+        else:
+            current_lane_avg_leader_speed = 0
+        # 自分自身の速度と走行中の車線の平均速度の大きい方を取得
+        baseline_speed = max(self.speed, current_lane_avg_leader_speed)
 
         target_lane_leader_speeds = [
             traci.vehicle.getSpeed(leader[0]) for leader in target_lane_leaders
@@ -714,6 +804,6 @@ class CustomCAV:
             target_lane_leader_speeds
         )
 
-        return target_lane_avg_leader_speed > self.speed * (
+        return target_lane_avg_leader_speed > baseline_speed * (
             1 + SPEED_IMPROVEMENT_THRESHOLD / 100
         )
