@@ -8,8 +8,8 @@ import sys
 from datetime import datetime
 
 import traci
-from func.custom_cav import CustomCAV
-from SimulationStatistics.simulation_statistics import SimulationStatistics
+from TraCI.func.custom_cav import CustomCAV
+from TraCI.SimulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 
 simulation_time = 300.0  # 5min
@@ -58,7 +58,7 @@ def run(inflow_pass=750, inflow_exit=750):
 
         poplist = []
 
-        congestio_point = _getCongestionPoint()
+        congestion_point = _getCongestionPoint()
 
         for index, ins in enumerate(vehicle_instance):
             # シミュレーション範囲を出た車両をリスト化
@@ -103,7 +103,7 @@ def run(inflow_pass=750, inflow_exit=750):
                     canceled_vehicle.remove(ins.id)
 
             # 自車両の情報（位置や速度）を更新
-            ins.updateStatus(congestio_point)
+            ins.updateStatus(congestion_point)
             # 自身の行動(Priority)を更新
             ins.decideNextActionAndPriority()
             # 車両の速度を更新
