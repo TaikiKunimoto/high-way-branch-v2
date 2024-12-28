@@ -8,8 +8,8 @@ import sys
 from datetime import datetime
 
 import traci
-from func.simple_cav import SimpleCAV
-from SimulationStatistics.simulation_statistics import SimulationStatistics
+from TraCI.func.simple_cav import SimpleCAV
+from TraCI.SimulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 
 simulation_time = 300.0  # 5min
@@ -104,10 +104,16 @@ def run(inflow_pass=750, inflow_exit=750):
             ins.updateStatus()
             # 自身の行動(Priority)を更新
             ins.decideNextActionAndPriority()
-            # 車線変更を実行
-            ins.executeLaneChange()
             # 車両の速度を更新
             ins.controlSpeed()
+            # 車線変更を実行
+            ins.executeLaneChange()
+
+            # use in debug
+            # if ins.id == "3":
+            #     print(
+            #         f"Vehicle ID: {ins.id}, Route: {ins.route}, lane : {ins.laneID}, pos: {ins.pos_x} action: {ins.action}, priority: {ins.priority}, status: {ins.status}, receiving_cooperative_from_id: {ins.receiving_cooperative_from_id}, providing_cooperative_to_id: {ins.providing_cooperative_to_id}"
+            #     )
 
             # Laneごとのキューから車両を削除
             _updateLaneQueue(ins.id)
@@ -295,7 +301,6 @@ def _add_vehicle():
     global departTime_r_pass, departTime_r_exit
     sumo_time = traci.simulation.getTime()
 
-
     # if sumo_time in departTime_r_pass:
     if sumo_time in departTime_r_pass:
         departLane = _getDepartLane("MainLane1")
@@ -307,7 +312,7 @@ def _add_vehicle():
             departPos="base",
             departSpeed="last",
         )
-        instance = SimpleCAV(veh_id, withAgree=True)
+        instance = SimpleCAV(veh_id)
         vehicle_instance.append(instance)
 
         if departLane == "0":
@@ -330,7 +335,7 @@ def _add_vehicle():
             departPos="base",
             departSpeed="last",
         )
-        instance = SimpleCAV(veh_id, withAgree=True)
+        instance = SimpleCAV(veh_id)
         vehicle_instance.append(instance)
 
         if departLane == "0":
