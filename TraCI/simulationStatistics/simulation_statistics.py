@@ -10,7 +10,7 @@ class SimulationStatistics:
     # 急ブレーキの回数
     emergency_brake_count = 0
 
-    def __init__(self, filename, output_dir="SimulationStatistics/statistics"):
+    def __init__(self, filename, output_dir="simulationStatistics/statistics"):
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
         self.filename = self._create_filename(filename)

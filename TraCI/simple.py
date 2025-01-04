@@ -370,7 +370,7 @@ if __name__ == "__main__":
     inflow_pass = int(args[3])  # 車両の流入数 pass
     inflow_exit = int(args[4])  # 車両の流入数 exit
 
-    stats = SimulationStatistics(filename="simple", output_dir="SimulationStatistics/statistics/simple")
+    stats = SimulationStatistics(filename="simple", output_dir="simulationStatistics/statistics/simple")
 
     # this script has been called from the command line. It will start sumo as a server, then connect and run
     if options.nogui:
