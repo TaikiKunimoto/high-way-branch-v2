@@ -10,7 +10,7 @@ from datetime import datetime
 
 import traci
 from func.default_cav import DefaultCAV
-from SimulationStatistics.simulation_statistics import SimulationStatistics
+from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 
 simulation_time = 300.0  # 5min
@@ -320,7 +320,7 @@ if __name__ == "__main__":
     inflow_pass = int(args[3])  # 車両の流入数 pass
     inflow_exit = int(args[4])  # 車両の流入数 exit
 
-    stats = SimulationStatistics(filename="default", output_dir="SimulationStatistics/statistics/default")
+    stats = SimulationStatistics(filename="default", output_dir="simulationStatistics/statistics/default")
 
     # this script has been called from the command line. It will start sumo as a server, then connect and run
     if options.nogui:
