@@ -460,32 +460,18 @@ class SimpleCAV:
             self._resetLaneChangeState()
         else:
             if cooperation_mode:
-                if self.receiving_cooperative_from_id in vehicle_instances:
+                # 新たに協調車両を決定するため過去の情報をリセット
+                if self.receiving_cooperative_from_id is not None:
                     supporting_vehicle = vehicle_instances[
                         self.receiving_cooperative_from_id
                     ]
-                    position_diff = self.pos_x - supporting_vehicle.pos_x
-                else:
-                    position_diff = -1 * math.inf
-
-                # 車線変更ができず、まだ協調車両がいない場合 or 協調車輌が自身より前方にいる場合
-                if (
-                    self.receiving_cooperative_from_id is None
-                    or position_diff <= self.length + minGap
-                ):
-                    # 新たに協調車両を決定するため過去の情報をリセット
-                    if self.receiving_cooperative_from_id is not None:
-                        supporting_vehicle = vehicle_instances[
-                            self.receiving_cooperative_from_id
-                        ]
-                        supporting_vehicle.status = CarStatus.NORMAL
-                        supporting_vehicle.priority = 0
-                        supporting_vehicle.providing_cooperative_to_id = None
-                        supporting_vehicle.do_not_speed_up = False
-                        self.receiving_cooperative_from_id = None
-
-                    self._decideYieldingVehicle()
-                    self._requestCooperation()
+                    supporting_vehicle.status = CarStatus.NORMAL
+                    supporting_vehicle.priority = 0
+                    supporting_vehicle.providing_cooperative_to_id = None
+                    supporting_vehicle.do_not_speed_up = False
+                    self.receiving_cooperative_from_id = None
+                self._decideYieldingVehicle()
+                self._requestCooperation()
                 # 協調車輌と自身の速度を調整
                 self._adjustSpeedForCooperation()
             else:
@@ -690,7 +676,7 @@ class SimpleCAV:
         self, requesting_speed, current_distance, required_distance
     ):
         if current_distance is None or required_distance is None:
-            return requesting_speed * 0.8
+            return requesting_speed * 0.7
 
         position_diff = required_distance - current_distance
 
