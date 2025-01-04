@@ -10,7 +10,7 @@ from datetime import datetime
 
 import traci
 from func.default_cav import DefaultCAV
-from SimulationStatistics.simulation_statistics import SimulationStatistics
+from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 
 simulation_time = 300.0  # 5min

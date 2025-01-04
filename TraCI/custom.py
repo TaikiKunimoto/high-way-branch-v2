@@ -8,8 +8,8 @@ import sys
 from datetime import datetime
 
 import traci
-from TraCI.func.custom_cav import CustomCAV
-from TraCI.SimulationStatistics.simulation_statistics import SimulationStatistics
+from func.custom_cav import CustomCAV
+from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 
 simulation_time = 300.0  # 5min

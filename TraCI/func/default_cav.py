@@ -6,7 +6,7 @@ from re import S
 
 import numpy as np
 
-from SimulationStatistics.simulation_statistics import SimulationStatistics
+from simulationStatistics.simulation_statistics import SimulationStatistics
 
 if "SUMO_HOME" in os.environ:
     tools = os.path.join(os.environ["SUMO_HOME"], "tools")

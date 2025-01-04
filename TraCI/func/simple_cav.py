@@ -2,7 +2,7 @@ import math
 import os
 import sys
 
-from TraCI.status.status import LaneChangeStatus, CarStatus, CarAction
+from status.status import LaneChangeStatus, CarStatus, CarAction
 
 if "SUMO_HOME" in os.environ:
     tools = os.path.join(os.environ["SUMO_HOME"], "tools")
