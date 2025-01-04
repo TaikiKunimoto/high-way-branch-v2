@@ -12,7 +12,7 @@ from func.custom_cav import CustomCAV
 from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 
-simulation_time = 300.0  # 5min
+simulation_time = 600.0  # 10min
 
 veh_id = 0
 
@@ -398,10 +398,10 @@ if __name__ == "__main__":
     # コマンドライン引数を取得
     options = _get_options()
     args = sys.argv
-    seed = args[2]  # 乱数のシード(等しいseedで実行すると同じ結果が得られる)
+    seed = args[1]  # 乱数のシード(等しいseedで実行すると同じ結果が得られる)
     random.seed(seed)
-    inflow_pass = int(args[3])  # 車両の流入数 pass
-    inflow_exit = int(args[4])  # 車両の流入数 exit
+    inflow_pass = int(args[2])  # 車両の流入数 pass
+    inflow_exit = int(args[3])  # 車両の流入数 exit
 
     stats = SimulationStatistics(
         filename="custom", output_dir="simulationStatistics/statistics/custom"

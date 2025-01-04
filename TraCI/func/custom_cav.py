@@ -2,7 +2,7 @@ import math
 import os
 import sys
 
-from status.status import LaneChangeStatus, CarStatus, CarAction
+from status.status import CarAction, CarStatus, LaneChangeStatus
 
 if "SUMO_HOME" in os.environ:
     tools = os.path.join(os.environ["SUMO_HOME"], "tools")
@@ -48,8 +48,10 @@ class CustomCAV:
         self.lane_change_status = LaneChangeStatus.SPEED_IMPROVEMENT_ONLY
         self.status = CarStatus.NORMAL
         self.action = CarAction.STAY
-        self.priority = 0  # 0(yielding or None), 1(low), 2, 3, 4, 5, 6(high), 7(emergency)
-        self.last_lane_change_time = None # Sumo Time
+        self.priority = (
+            0  # 0(yielding or None), 1(low), 2, 3, 4, 5, 6(high), 7(emergency)
+        )
+        self.last_lane_change_time = None  # Sumo Time
         self.lane_change_pending = False
         self.receiving_cooperative_from_id = None  # 協調中に譲ってもらう車両のID
         self.providing_cooperative_to_id = None  # 協調して譲る車両のID
@@ -105,7 +107,8 @@ class CustomCAV:
                 "action": CarAction.CHANGE_RIGHT,
                 "priority": 0,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
+                    lambda: self.lane_change_status
+                    == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
                     lambda: self._isPredictedSpeedIncrease("right"),
                 ],
             },
@@ -114,7 +117,9 @@ class CustomCAV:
                 "action": CarAction.CHANGE_RIGHT,
                 "priority": 3,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY or self.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
+                    lambda: self.lane_change_status
+                    == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY
+                    or self.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
                     lambda: self._isPredictedSpeedIncrease("right"),
                 ],
             },
@@ -123,7 +128,8 @@ class CustomCAV:
                 "action": CarAction.CHANGE_LEFT,
                 "priority": 0,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
+                    lambda: self.lane_change_status
+                    == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
                     lambda: self._isPredictedSpeedIncrease("left"),
                 ],
             },
@@ -131,7 +137,8 @@ class CustomCAV:
                 "action": CarAction.CHANGE_RIGHT,
                 "priority": 0,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
+                    lambda: self.lane_change_status
+                    == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
                     lambda: self._isPredictedSpeedIncrease("right"),
                 ],
             },
@@ -163,7 +170,8 @@ class CustomCAV:
                 "action": CarAction.CHANGE_LEFT,
                 "priority": 0,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
+                    lambda: self.lane_change_status
+                    == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
                     lambda: self._isPredictedSpeedIncrease("left"),
                 ],
             },
@@ -178,7 +186,9 @@ class CustomCAV:
                 "action": CarAction.CHANGE_LEFT,
                 "priority": 2,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY or self.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
+                    lambda: self.lane_change_status
+                    == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY
+                    or self.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
                     lambda: self._isPredictedSpeedIncrease("left"),
                 ],
             },
@@ -225,8 +235,12 @@ class CustomCAV:
 
         # 分流車両の車線変更が間に合わない場合優先度を最大にする
         # 分岐地点の50m手前で車線変更できていない場合は優先度を最大にする
-        if self.road == "MainLane1" and self.lane_pos > MAINLANE_LENGTH - 50 and self.priority >= 5:
-                self.priority = 7
+        if (
+            self.road == "MainLane1"
+            and self.lane_pos > MAINLANE_LENGTH - 50
+            and self.priority >= 5
+        ):
+            self.priority = 7
 
         if self.road != "MainLane1" and self.status != CarStatus.NORMAL:
             self._resetLaneChangeState()
@@ -239,7 +253,9 @@ class CustomCAV:
                 self._resetLaneChangeStateKeepYielding()
 
         if self.lane_change_status == LaneChangeStatus.ALL_ALLOWED:
-            if self.road != "MainLane1" or self.lane_pos >= MAINLANE_LENGTH - (self.length + minGap):
+            if self.road != "MainLane1" or self.lane_pos >= MAINLANE_LENGTH - (
+                self.length + minGap
+            ):
                 # 車線変更は禁止するが協調中のステータスは維持, 優先度が7の場合は車線変更可能
                 self.lane_change_status = LaneChangeStatus.UNAVAILABLE
                 self._resetLaneChangeStateKeepYielding()
@@ -256,17 +272,33 @@ class CustomCAV:
 
         # debug 協調車両同士が正しく設定されているか確認
         # TODO この関数入れるだけでめっちゃ重くなるから消したい
-        if self.receiving_cooperative_from_id in vehicle_instances:
-            supporting_vehicle = vehicle_instances[self.receiving_cooperative_from_id]
+        if self.providing_cooperative_to_id is not None:
+            if self.providing_cooperative_to_id in vehicle_instances:
+                supporting_vehicle = vehicle_instances[self.providing_cooperative_to_id]
 
-            # 協調車両同士が同一車線にいる場合はその関係を解消（バグ防止）
-            if self.lane == supporting_vehicle.lane:
-                print(f"Error: {self.id} is providing cooperation to {self.receiving_cooperative_from_id} but they are in the same lane")
-                self._resetLaneChangeState()
-            
-            # debug
-            if self.id != supporting_vehicle.providing_cooperative_to_id:
-                print(f"Error: {self.id} is receiving cooperation from {self.receiving_cooperative_from_id} but providing cooperation to {supporting_vehicle.providing_cooperative_to_id}")
+                if self.lane == supporting_vehicle.lane:
+                    print(
+                        f"Error: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but they are in the same lane"
+                    )
+                    supporting_vehicle._resetLaneChangeState()
+
+                if supporting_vehicle.action == CarAction.CHANGE_LEFT:
+                    if supporting_vehicle.lane != self.lane - 1:
+                        print(
+                            f"Error: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but the target lane is not correct"
+                        )
+                        supporting_vehicle._resetLaneChangeState()
+                elif supporting_vehicle.action == CarAction.CHANGE_RIGHT:
+                    if supporting_vehicle.lane != self.lane + 1:
+                        print(
+                            f"Error: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but the target lane is not correct"
+                        )
+                        supporting_vehicle._resetLaneChangeState()
+
+                if self.id != supporting_vehicle.receiving_cooperative_from_id:
+                    print(
+                        f"Error: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but receiving cooperation from {supporting_vehicle.receiving_cooperative_from_id}"
+                    )
 
     """ 自身の行動（priority） を決定 """
 
@@ -277,11 +309,10 @@ class CustomCAV:
             self.priority = 0
 
         # 車線変更中の場合は行動を継続
-        if (
-            self.lane_change_status == LaneChangeStatus.ALL_ALLOWED 
-            and (self.status == CarStatus.LANE_CHANGING
+        if self.lane_change_status == LaneChangeStatus.ALL_ALLOWED and (
+            self.status == CarStatus.LANE_CHANGING
             or self.status == CarStatus.YIELDING
-            or self.status == CarStatus.LANE_CHANGED)
+            or self.status == CarStatus.LANE_CHANGED
         ):
             return
 
@@ -396,12 +427,15 @@ class CustomCAV:
     """ 車線変更を実行 """
 
     def executeLaneChange(self):
-        if self.lane_change_status == LaneChangeStatus.UNAVAILABLE and self.priority != 7:
+        if (
+            self.lane_change_status == LaneChangeStatus.UNAVAILABLE
+            and self.priority != 7
+        ):
             return
 
         if self.action == CarAction.STAY:
             return
-        
+
         # 速度向上を目的とする車線変更で協調は行わない
         # TODO Lane2からの速度向上を目的とする車線変更でどこまで協調させるか検討
         if self.priority >= 3:
@@ -435,7 +469,7 @@ class CustomCAV:
             if self.road != "MainLane1":
                 self._resetLaneChangeState()
                 return
-            
+
             self.last_lane_change_time = self.simTime
 
             # 車線変更が可能な場合は実行
@@ -452,7 +486,10 @@ class CustomCAV:
                     position_diff = -1 * math.inf
 
                 # 車線変更ができず、まだ協調車両がいない場合 or 協調車輌が自身より前方にいる場合
-                if self.receiving_cooperative_from_id is None or position_diff <= 5:
+                if (
+                    self.receiving_cooperative_from_id is None
+                    or position_diff <= self.length + minGap
+                ):
                     # 新たに協調車両を決定するため過去の情報をリセット
                     if self.receiving_cooperative_from_id is not None:
                         supporting_vehicle = vehicle_instances[
@@ -702,8 +739,9 @@ class CustomCAV:
         for vehicle_id, distance in candidates:
             if vehicle_id in vehicle_instances:
                 vehicle = vehicle_instances[vehicle_id]
-                if (
-                    vehicle.priority < self.priority and (vehicle.status == CarStatus.NORMAL or vehicle.status == CarStatus.LANE_CHANGING)
+                if vehicle.priority < self.priority and (
+                    vehicle.status == CarStatus.NORMAL
+                    or vehicle.status == CarStatus.LANE_CHANGING
                 ):  # 自身より優先度が低い車輌に限定
                     viable_candidates.append((vehicle_id, distance))
 
@@ -798,9 +836,11 @@ class CustomCAV:
                     # 最小限の車間距離のみ要求
                     required_distance = self.length + minGap * 1.5
                 else:
-                    required_distance = self.length + minGap * 1.5 + follower.safety_gap * (
-                        speed_diff / maxSpeed
-                    ) 
+                    required_distance = (
+                        self.length
+                        + minGap * 1.5
+                        + follower.safety_gap * (speed_diff / maxSpeed)
+                    )
                     # 必要な後続との距離は、車両長 + minGap + 後続の制動距離(+速度差)を考慮した値
                     # 速度差が大きい場合には制動距離をより考慮したい。速度差は 0 ~ 27のレンジなので、それを0 ~ 1に正規化して考慮する
 
@@ -820,8 +860,10 @@ class CustomCAV:
                     required_distance = self.length + minGap * 1.5
                 else:
                     # 車線変更時は通常のsafety_gapより短い距離を許容
-                    required_distance = self.length + minGap * 1.5 + self.safety_gap * (
-                        speed_diff / maxSpeed
+                    required_distance = (
+                        self.length
+                        + minGap * 1.5
+                        + self.safety_gap * (speed_diff / maxSpeed)
                     )
 
                 if leader_distance < required_distance:
@@ -849,7 +891,7 @@ class CustomCAV:
 
         if not target_lane_leaders:
             return True
-        
+
         current_lane_leader_speeds = [
             traci.vehicle.getSpeed(leader[0]) for leader in self.current_lane_leaders
         ]

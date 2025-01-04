@@ -12,7 +12,7 @@ from func.simple_cav import SimpleCAV
 from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 
-simulation_time = 300.0  # 5min
+simulation_time = 600.0  # 10min
 
 veh_id = 0
 
@@ -134,7 +134,9 @@ def run(inflow_pass=750, inflow_exit=750):
     for _, vehicles in collision_history:
         collided_vehicles.update(vehicles)
 
-    canceled_veh_without_collied_veh = [veh_id for veh_id in canceled_vehicle if veh_id not in collided_vehicles]
+    canceled_veh_without_collied_veh = [
+        veh_id for veh_id in canceled_vehicle if veh_id not in collided_vehicles
+    ]
 
     _printSImulationInfoAtEnd(running_list)
     _print_collision_summary()
@@ -365,12 +367,14 @@ if __name__ == "__main__":
     # コマンドライン引数を取得
     options = _get_options()
     args = sys.argv
-    seed = args[2]  # 乱数のシード(等しいseedで実行すると同じ結果が得られる)
+    seed = args[1]  # 乱数のシード(等しいseedで実行すると同じ結果が得られる)
     random.seed(seed)
-    inflow_pass = int(args[3])  # 車両の流入数 pass
-    inflow_exit = int(args[4])  # 車両の流入数 exit
+    inflow_pass = int(args[2])  # 車両の流入数 pass
+    inflow_exit = int(args[3])  # 車両の流入数 exit
 
-    stats = SimulationStatistics(filename="simple", output_dir="simulationStatistics/statistics/simple")
+    stats = SimulationStatistics(
+        filename="simple", output_dir="simulationStatistics/statistics/simple"
+    )
 
     # this script has been called from the command line. It will start sumo as a server, then connect and run
     if options.nogui:
