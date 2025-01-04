@@ -103,7 +103,7 @@ class SimulationStatistics:
 
     def _create_filename(self, filename):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-        return f"{self.output_dir}/simulation_results_{filename}_{timestamp}.csv"
+        return f"{self.output_dir}/{filename}_{timestamp}.csv"
 
     def _create_csv_with_headers(self):
         headers = [
