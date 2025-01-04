@@ -712,7 +712,7 @@ class CustomCAV:
         self, requesting_speed, current_distance, required_distance
     ):
         if current_distance is None or required_distance is None:
-            return requesting_speed
+            return requesting_speed * 0.9
 
         position_diff = required_distance - current_distance
 
