@@ -12,7 +12,7 @@ else:
 import traci  # noqa
 
 maxSpeed = 27  # [m/s]
-maxAccel = 5.0  # [m/ss]
+maxAccel = 10.0  # [m/ss]
 maxDecel = -5.0  # [m/ss]
 minGap = 2.8  # [m]
 reactionTime = 0.75  # [s]
@@ -207,9 +207,6 @@ class CustomCAV:
     """ 自身のステータスを更新 """
 
     def updateStatus(self, congestion_point):
-        if self.status == CarStatus.LANE_CHANGED:
-            self._resetLaneChangeState()
-
         self.simTime = traci.simulation.getTime()
         self.speed_history.append(traci.vehicle.getSpeed(self.id))
 
@@ -310,9 +307,7 @@ class CustomCAV:
 
         # 車線変更中の場合は行動を継続
         if self.lane_change_status == LaneChangeStatus.ALL_ALLOWED and (
-            self.status == CarStatus.LANE_CHANGING
-            or self.status == CarStatus.YIELDING
-            or self.status == CarStatus.LANE_CHANGED
+            self.status == CarStatus.LANE_CHANGING or self.status == CarStatus.YIELDING
         ):
             return
 
@@ -370,11 +365,7 @@ class CustomCAV:
             return
 
         # 協調フェーズの場合は加速は行わない
-        if (
-            self.status == CarStatus.YIELDING
-            or self.status == CarStatus.LANE_CHANGING
-            or self.status == CarStatus.LANE_CHANGED
-        ):
+        if self.status == CarStatus.YIELDING or self.status == CarStatus.LANE_CHANGING:
             self.do_not_speed_up = True
         else:
             self.do_not_speed_up = False
@@ -474,7 +465,8 @@ class CustomCAV:
 
             # 車線変更が可能な場合は実行
             traci.vehicle.changeLane(self.id, self.lane + lane_change_amount, 0)
-            self.status = CarStatus.LANE_CHANGED
+            # 車線変更中のステータスをリセット
+            self._resetLaneChangeState()
         else:
             if cooperation_mode:
                 if self.receiving_cooperative_from_id in vehicle_instances:
@@ -712,7 +704,7 @@ class CustomCAV:
         self, requesting_speed, current_distance, required_distance
     ):
         if current_distance is None or required_distance is None:
-            return requesting_speed * 0.9
+            return requesting_speed * 0.8
 
         position_diff = required_distance - current_distance
 

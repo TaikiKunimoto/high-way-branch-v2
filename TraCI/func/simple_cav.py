@@ -12,7 +12,7 @@ else:
 import traci  # noqa
 
 maxSpeed = 27  # [m/s]
-maxAccel = 5.0  # [m/ss]
+maxAccel = 10.0  # [m/ss]
 maxDecel = -5.0  # [m/ss]
 minGap = 2.8  # [m]
 reactionTime = 0.75  # [s]
@@ -205,9 +205,6 @@ class SimpleCAV:
     """ 自身のステータスを更新 """
 
     def updateStatus(self):
-        if self.status == CarStatus.LANE_CHANGED:
-            self._resetLaneChangeState()
-
         self.simTime = traci.simulation.getTime()
         self.speed_history.append(traci.vehicle.getSpeed(self.id))
 
@@ -248,8 +245,10 @@ class SimpleCAV:
                 self._resetLaneChangeStateKeepYielding()
 
         if self.lane_change_status == LaneChangeStatus.ALL_ALLOWED:
-            if self.road != "MainLane1" or self.lane_pos >= MAINLANE_LENGTH - (
-                self.length + minGap
+            if (
+                self.road != "MainLane1"
+                or self.lane_pos >= MAINLANE_LENGTH - (self.length + minGap)
+                and self.priority != 1
             ):
                 # 車線変更は禁止するが協調中のステータスは維持, 優先度が1の場合は車線変更可能
                 self.lane_change_status = LaneChangeStatus.UNAVAILABLE
@@ -305,9 +304,7 @@ class SimpleCAV:
 
         # 車線変更中の場合は行動を継続
         if self.lane_change_status == LaneChangeStatus.ALL_ALLOWED and (
-            self.status == CarStatus.LANE_CHANGING
-            or self.status == CarStatus.YIELDING
-            or self.status == CarStatus.LANE_CHANGED
+            self.status == CarStatus.LANE_CHANGING or self.status == CarStatus.YIELDING
         ):
             return
 
@@ -365,11 +362,7 @@ class SimpleCAV:
             return
 
         # 協調フェーズの場合は加速は行わない
-        if (
-            self.status == CarStatus.YIELDING
-            or self.status == CarStatus.LANE_CHANGING
-            or self.status == CarStatus.LANE_CHANGED
-        ):
+        if self.status == CarStatus.YIELDING or self.status == CarStatus.LANE_CHANGING:
             self.do_not_speed_up = True
         else:
             self.do_not_speed_up = False
@@ -438,7 +431,7 @@ class SimpleCAV:
             cooperation_mode = True
 
         if self.last_lane_change_time is not None:
-            if self.simTime - self.last_lane_change_time < 7:
+            if self.simTime - self.last_lane_change_time < 5:
                 self.lane_change_pending = True
             else:
                 self.lane_change_pending = False
@@ -452,7 +445,8 @@ class SimpleCAV:
             # 車線変更がpendingの最中は協調車両を選ばない
             self._adjustSpeedForCooperation()
             return
-        elif self._canChangeLane(direction):
+
+        if self._canChangeLane(direction):
             # 意図しない挙動でシミュレーションが止まるのを防ぐ 衝突は消滅したけど一応残した
             if self.road != "MainLane1":
                 self._resetLaneChangeState()
@@ -462,7 +456,8 @@ class SimpleCAV:
 
             # 車線変更が可能な場合は実行
             traci.vehicle.changeLane(self.id, self.lane + lane_change_amount, 0)
-            self.status = CarStatus.LANE_CHANGED
+            # 車線変更中のステータスをリセット
+            self._resetLaneChangeState()
         else:
             if cooperation_mode:
                 if self.receiving_cooperative_from_id in vehicle_instances:
@@ -695,7 +690,7 @@ class SimpleCAV:
         self, requesting_speed, current_distance, required_distance
     ):
         if current_distance is None or required_distance is None:
-            return requesting_speed * 0.9
+            return requesting_speed * 0.8
 
         position_diff = required_distance - current_distance
 

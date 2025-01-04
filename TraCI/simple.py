@@ -104,10 +104,10 @@ def run(inflow_pass=750, inflow_exit=750):
             ins.updateStatus()
             # 自身の行動(Priority)を更新
             ins.decideNextActionAndPriority()
-            # 車両の速度を更新
-            ins.controlSpeed()
             # 車線変更を実行
             ins.executeLaneChange()
+            # 車両の速度を更新
+            ins.controlSpeed()
 
             # use in debug
             # if ins.id == "3":
