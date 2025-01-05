@@ -270,12 +270,14 @@ class SimpleCAV:
             if self.providing_cooperative_to_id in vehicle_instances:
                 supporting_vehicle = vehicle_instances[self.providing_cooperative_to_id]
 
+                # 協調車両同士が同じレーンにいる場合は協調関係を解除
                 if self.lane == supporting_vehicle.lane:
                     print(
                         f"Error: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but they are in the same lane"
                     )
                     supporting_vehicle._resetLaneChangeState()
 
+                # 協調車両同士の車線変更先が正しいか確認
                 if supporting_vehicle.action == CarAction.CHANGE_LEFT:
                     if supporting_vehicle.lane != self.lane - 1:
                         print(
@@ -289,6 +291,7 @@ class SimpleCAV:
                         )
                         supporting_vehicle._resetLaneChangeState()
 
+                # use in debug
                 if self.id != supporting_vehicle.receiving_cooperative_from_id:
                     print(
                         f"Error: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but receiving cooperation from {supporting_vehicle.receiving_cooperative_from_id}"
