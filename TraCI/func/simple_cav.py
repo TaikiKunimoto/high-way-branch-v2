@@ -50,7 +50,6 @@ class SimpleCAV:
         self.action = CarAction.STAY
         self.priority = 0  # 0(normal), 1(emergency)
         self.last_lane_change_time = None  # Sumo Time
-        self.lane_change_pending = False
         self.receiving_cooperative_from_id = None  # 協調中に譲ってもらう車両のID
         self.providing_cooperative_to_id = None  # 協調して譲る車両のID
         self.leader_distance = None  # 前方車両との距離
@@ -310,6 +309,13 @@ class SimpleCAV:
             self.status == CarStatus.LANE_CHANGING or self.status == CarStatus.YIELDING
         ):
             return
+        
+        # 連続して車線変更を行わないための制御
+        if self.last_lane_change_time is not None:
+            if self.simTime - self.last_lane_change_time < 5:
+                self.action = CarAction.STAY
+                self.priority = 0
+                return
 
         # 現在のレーンと経路に基づくルールを取得
         if self.lane != 1:
@@ -433,21 +439,9 @@ class SimpleCAV:
         elif self.lane_change_status == LaneChangeStatus.ALL_ALLOWED:
             cooperation_mode = True
 
-        if self.last_lane_change_time is not None:
-            if self.simTime - self.last_lane_change_time < 5:
-                self.lane_change_pending = True
-            else:
-                self.lane_change_pending = False
-        else:
-            self.lane_change_pending = False
 
         direction = "left" if self.action == CarAction.CHANGE_LEFT else "right"
         lane_change_amount = 1 if direction == "left" else -1
-
-        if self.lane_change_pending:
-            # 車線変更がpendingの最中は協調車両を選ばない
-            self._adjustSpeedForCooperation()
-            return
 
         if self._canChangeLane(direction):
             # 意図しない挙動でシミュレーションが止まるのを防ぐ 衝突は消滅したけど一応残した
@@ -732,7 +726,6 @@ class SimpleCAV:
         self.current_distance_from_leader = None
         self.lane_change_leader_speed = None
         self.do_not_speed_up = False
-        self.lane_change_pending = False
 
         if self.receiving_cooperative_from_id in vehicle_instances:
             supporting_vehicle = vehicle_instances[self.receiving_cooperative_from_id]
@@ -753,7 +746,6 @@ class SimpleCAV:
         self.current_distance_from_leader = None
         self.lane_change_leader_speed = None
         self.do_not_speed_up = False
-        self.lane_change_pending = False
 
         if self.receiving_cooperative_from_id in vehicle_instances:
             supporting_vehicle = vehicle_instances[self.receiving_cooperative_from_id]
@@ -786,7 +778,6 @@ class SimpleCAV:
                     if (
                         abs(veh_pos - own_pos) < check_range
                         and opposite_vehicle.action != CarAction.STAY
-                        and own_pos < veh_pos
                     ):
                         return False
 

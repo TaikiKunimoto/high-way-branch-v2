@@ -110,9 +110,9 @@ def run(inflow_pass=750, inflow_exit=750):
             ins.controlSpeed()
 
             # use in debug
-            # if ins.id == "3":
+            # if ins.id == "0" or ins.id == "1" or ins.id == "2":
             #     print(
-            #         f"Vehicle ID: {ins.id}, Route: {ins.route}, lane : {ins.laneID}, pos: {ins.pos_x} action: {ins.action}, priority: {ins.priority}, status: {ins.status}, receiving_cooperative_from_id: {ins.receiving_cooperative_from_id}, providing_cooperative_to_id: {ins.providing_cooperative_to_id}"
+            #         f"Vehicle ID: {ins.id}, Route: {ins.route}, lane : {ins.laneID}, pos: {ins.pos_x} action: {ins.action}, priority: {ins.priority}, status: {ins.status}"
             #     )
 
             # Laneごとのキューから車両を削除
