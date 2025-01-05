@@ -9,7 +9,6 @@ class CarStatus(Enum):
     NORMAL = auto()               # 通常
     YIELDING = auto()             # 他の車両に譲る
     LANE_CHANGING = auto()        # 車線変更中
-    LANE_CHANGED = auto()         # 車線変更完了
 
 class CarAction(Enum):
     STAY = auto()                 # 車線維持
