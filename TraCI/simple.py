@@ -59,6 +59,10 @@ def run(inflow_pass, inflow_exit):
 
         poplist = []
 
+        lane_2_congestion_tail_point = _getLane2CongestionPoint()
+        # lane_1_congestion_head_point = _getLane1CongestionPoint()
+        lane_1_congestion_head_point = None  # 今は使用していないのでNone
+
         for index, ins in enumerate(vehicle_instance):
             # シミュレーション範囲を出た車両をリスト化
             if ins.id in arrived_list:
@@ -102,7 +106,7 @@ def run(inflow_pass, inflow_exit):
                     canceled_vehicle.remove(ins.id)
 
             # 自車両の情報（位置や速度）を更新
-            ins.updateStatus()
+            ins.updateStatus(lane_2_congestion_tail_point, lane_1_congestion_head_point)
             # 自身の行動(Priority)を更新
             ins.decideNextActionAndPriority()
             # 車線変更を実行
@@ -277,6 +281,64 @@ def _getDepartLane(edge_id):
         departLane = random.choice(min_queue_lanes)
 
     return departLane
+
+
+# Lane2での渋滞が発生しているポイントを調査
+def _getLane2CongestionPoint():
+    lane2_vehicles = traci.lane.getLastStepVehicleIDs("MainLane1_2")
+    if len(lane2_vehicles) < MIN_CONGESTED_VEHICLES:
+        return None
+
+    sorted_vehicles = sorted(
+        lane2_vehicles,
+        key=lambda x: traci.vehicle.getLanePosition(x),
+        reverse=True,
+    )
+
+    congested_sequence = []
+    tail_position = None
+    for veh_id in sorted_vehicles:
+        speed = traci.vehicle.getSpeed(veh_id)
+
+        if speed <= CONGESTION_SPEED:
+            congested_sequence.append(veh_id)
+            if len(congested_sequence) >= MIN_CONGESTED_VEHICLES:
+                tail_position = traci.vehicle.getLanePosition(congested_sequence[-1])
+                continue
+        else:
+            congested_sequence = []
+            continue
+
+    return tail_position
+
+
+# Lane1での渋滞が発生しているポイントを調査
+def _getLane1CongestionPoint():
+    lane1_vehicles = traci.lane.getLastStepVehicleIDs("MainLane1_1")
+    if len(lane1_vehicles) < MIN_CONGESTED_VEHICLES:
+        return None
+
+    sorted_vehicles = sorted(
+        lane1_vehicles,
+        key=lambda x: traci.vehicle.getLanePosition(x),
+        reverse=True,
+    )
+
+    congested_sequence = []
+    head_position = None
+    for veh_id in sorted_vehicles:
+        speed = traci.vehicle.getSpeed(veh_id)
+
+        if speed <= CONGESTION_SPEED:
+            congested_sequence.append(veh_id)
+            if len(congested_sequence) >= MIN_CONGESTED_VEHICLES:
+                head_position = traci.vehicle.getLanePosition(congested_sequence[0])
+                continue
+        else:
+            congested_sequence = []
+            continue
+
+    return head_position
 
 
 def _shouldContinueSimWithVehiclesCount():

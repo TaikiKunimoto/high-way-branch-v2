@@ -113,9 +113,9 @@ def run(inflow_pass, inflow_exit):
             ins.controlSpeed()
 
             # use in debug
-            # if ins.id == "3":
+            # if ins.lane == 2:
             #     print(
-            #         f"Vehicle ID: {ins.id}, Route: {ins.route}, lane : {ins.laneID}, pos: {ins.pos_x} action: {ins.action}, priority: {ins.priority}, status: {ins.status}, receiving_cooperative_from_id: {ins.receiving_cooperative_from_id}, providing_cooperative_to_id: {ins.providing_cooperative_to_id}"
+            #         f"Vehicle ID: {ins.id},speed: {ins.speed}, Route: {ins.route}, lane : {ins.laneID}, pos: {ins.pos_x} action: {ins.action}, priority: {ins.priority}, status: {ins.status}, receiving_cooperative_from_id: {ins.receiving_cooperative_from_id}, providing_cooperative_to_id: {ins.providing_cooperative_to_id}"
             #     )
 
             # Laneごとのキューから車両を削除
@@ -301,7 +301,7 @@ def _getCongestionPoint():
         if speed <= CONGESTION_SPEED:
             congested_sequence.append(veh_id)
             if len(congested_sequence) >= MIN_CONGESTED_VEHICLES:
-                tail_position = traci.vehicle.getLanePosition(congested_sequence[0])
+                tail_position = traci.vehicle.getLanePosition(congested_sequence[-1])
                 continue
         else:
             congested_sequence = []

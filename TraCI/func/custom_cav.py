@@ -231,12 +231,11 @@ class CustomCAV:
 
         # 分流車両の車線変更が間に合わない場合優先度を最大にする
         # 分岐地点の50m手前で車線変更できていない場合は優先度を最大にする
-        if (
-            self.road == "MainLane1"
-            and self.lane_pos > MAINLANE_LENGTH - 50
-            and self.priority >= 5
-        ):
-            self.priority = 7
+        if self.road == "MainLane1" and self.lane_pos > MAINLANE_LENGTH - 50:
+            if self.route == "r_exit" and self.lane != 2:
+                self.priority = 7
+                self.action = CarAction.CHANGE_LEFT
+                self.status = CarStatus.LANE_CHANGING
 
         if self.road != "MainLane1" and self.status != CarStatus.NORMAL:
             self._resetLaneChangeState()
@@ -687,12 +686,12 @@ class CustomCAV:
         self, requesting_speed, current_distance, required_distance
     ):
         if current_distance is None or required_distance is None:
-            return requesting_speed * 0.5
+            return requesting_speed * 0.3
 
         position_diff = required_distance - current_distance
 
         # 車間距離が不足 → より大きく減速して車間を開ける
-        deceleration_rate = min(position_diff / required_distance, 0.5)
+        deceleration_rate = min(position_diff / required_distance, 0.3)
         return requesting_speed * deceleration_rate
 
     """ 協調車両を決定 """

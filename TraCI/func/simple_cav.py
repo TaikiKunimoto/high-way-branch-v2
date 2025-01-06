@@ -18,7 +18,12 @@ minGap = 2.8  # [m]
 reactionTime = 0.75  # [s]
 frictionCoefficient = 0.7  # 摩擦係数
 LANE_WIDTH = 3.2  # [m]
-LANE_CHANGE_MARGIN = 400.0  # [m] 渋滞発生地点の何メートル手前から車線変更を許可するか
+LANE_CHANGE_MARGIN_DEFAULT = (
+    400.0  # [m] 分岐地点の何メートル手前から車線変更を許可するか
+)
+LANE_CHANGE_MARGIN_CONGESTED = (
+    120.0  # [m] Lane2が混雑している際に分岐地点の何メートル手前から車線変更を許可するか
+)
 SPEED_IMPROVEMENT_THRESHOLD = 40.0  # 車線変更による速度改善の閾値 [%]
 MAINLANE_LENGTH = 1500  # [m]
 
@@ -203,7 +208,8 @@ class SimpleCAV:
 
     """ 自身のステータスを更新 """
 
-    def updateStatus(self):
+    def updateStatus(self, lane_2_congestion_tail_point, lane_1_congestion_head_point):
+        # lane_1_congestion_head_pointは使用していない
         self.simTime = traci.simulation.getTime()
 
         # update own position
@@ -229,8 +235,10 @@ class SimpleCAV:
 
         # 分流車両の車線変更が間に合わない場合優先度を最大にする
         # 分岐地点の50m手前で車線変更できていない場合は優先度を最大にする
-        if self.road == "MainLane1" and self.lane_pos > MAINLANE_LENGTH - 50:
+        if self.road == "MainLane1" and self.lane_pos > MAINLANE_LENGTH - LANE_CHANGE_MARGIN_CONGESTED:
             if self.route == "r_exit" and self.lane != 2:
+                self.action = CarAction.CHANGE_LEFT
+                self.status = CarStatus.LANE_CHANGING
                 self.priority = 1
 
         if self.road != "MainLane1" and self.status != CarStatus.NORMAL:
@@ -238,7 +246,7 @@ class SimpleCAV:
 
         # 車線変更が可能なポイントを通過したら車線変更を可能にする
         if self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
-            if self._hasPassedLaneChangePoint():
+            if self._hasPassedLaneChangePoint(lane_2_congestion_tail_point, lane_1_congestion_head_point):
                 self.lane_change_status = LaneChangeStatus.ALL_ALLOWED
                 # 協調車線変更が可能になったタイミングで行動を初期化, 協調中であればそのステータスは維持
                 self._resetLaneChangeStateKeepYielding()
@@ -550,9 +558,15 @@ class SimpleCAV:
 
     """ 車線変更が可能なポイントを通過したかどうか """
 
-    def _hasPassedLaneChangePoint(self):
+    def _hasPassedLaneChangePoint(self, lane_2_congestion_tail_point, lane_1_congestion_head_point):
         current_pos = self.lane_pos
-        merge_start_pos = MAINLANE_LENGTH - LANE_CHANGE_MARGIN
+        if (
+            lane_2_congestion_tail_point is not None
+            and lane_2_congestion_tail_point < MAINLANE_LENGTH - LANE_CHANGE_MARGIN_DEFAULT
+        ):
+            merge_start_pos = MAINLANE_LENGTH - LANE_CHANGE_MARGIN_CONGESTED
+        else:
+            merge_start_pos = MAINLANE_LENGTH - LANE_CHANGE_MARGIN_DEFAULT
 
         if current_pos > merge_start_pos:
             return True
@@ -673,12 +687,12 @@ class SimpleCAV:
         self, requesting_speed, current_distance, required_distance
     ):
         if current_distance is None or required_distance is None:
-            return requesting_speed * 0.5
+            return requesting_speed * 0.3
 
         position_diff = required_distance - current_distance
 
         # 車間距離が不足 → より大きく減速して車間を開ける
-        deceleration_rate = min(position_diff / required_distance, 0.5)
+        deceleration_rate = min(position_diff / required_distance, 0.3)
         return requesting_speed * deceleration_rate
 
     """ 協調車両を決定 """
