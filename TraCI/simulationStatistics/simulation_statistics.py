@@ -132,6 +132,8 @@ class SimulationStatistics:
             # "emergency_brake_count",
             "min_TTC",
             "TET",
+            "total_collisions",
+            "total_vehicles_involved"
         ]
         with open(self.filename, "w", newline="") as f:
             writer = csv.writer(f)
@@ -169,6 +171,8 @@ class SimulationStatistics:
             self._calculate_fairness_index(results),
             self.min_TTC,
             self.total_TET,
+            results["total_collisions"],
+            results["total_vehicles_involved"]
         ]
 
         with open(self.filename, "a", newline="") as f:

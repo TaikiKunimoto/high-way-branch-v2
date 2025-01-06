@@ -29,6 +29,8 @@ r_exit_exit_vehicle = []
 canceled_vehicle = []
 canceled_veh_without_collied_veh = []
 collision_history = []  # 各要素は (time, vehicle_id1, vehicle_id2) のタプル
+total_collisions = 0
+total_vehicles_involved = 0
 
 
 lane0_queue = []
@@ -113,9 +115,9 @@ def run(inflow_pass, inflow_exit):
             ins.controlSpeed()
 
             # use in debug
-            # if ins.id == "3":
+            # if ins.lane == 2:
             #     print(
-            #         f"Vehicle ID: {ins.id}, Route: {ins.route}, lane : {ins.laneID}, pos: {ins.pos_x} action: {ins.action}, priority: {ins.priority}, status: {ins.status}, receiving_cooperative_from_id: {ins.receiving_cooperative_from_id}, providing_cooperative_to_id: {ins.providing_cooperative_to_id}"
+            #         f"Vehicle ID: {ins.id},speed: {ins.speed}, Route: {ins.route}, lane : {ins.laneID}, pos: {ins.pos_x} action: {ins.action}, priority: {ins.priority}, status: {ins.status}, receiving_cooperative_from_id: {ins.receiving_cooperative_from_id}, providing_cooperative_to_id: {ins.providing_cooperative_to_id}"
             #     )
 
             # Laneごとのキューから車両を削除
@@ -159,6 +161,8 @@ def run(inflow_pass, inflow_exit):
         # "lane1_queue": lane1_queue,
         # "lane2_queue": lane2_queue,
         "traffic_volume": len(total_departed_vehicle) * (3600 / simulation_time),
+        "total_collisions": total_collisions,
+        "total_vehicles_involved": total_vehicles_involved,
     }
     stats.add_result(simulation_time, seed, inflow_pass, inflow_exit, results)
 
@@ -195,7 +199,6 @@ def _set_environment(inflow_pass: int, inflow_exit: int):
 def _printSImulationInfoAtEnd(running_list):
     print("=====================================")
     print("simulation end")
-
     # 生成された車輌インスタンスの数
     print("vehicle_instance Length :", veh_id)
     # 最後までシミュレーション内部に残っている車輌の数
@@ -301,7 +304,7 @@ def _getCongestionPoint():
         if speed <= CONGESTION_SPEED:
             congested_sequence.append(veh_id)
             if len(congested_sequence) >= MIN_CONGESTED_VEHICLES:
-                tail_position = traci.vehicle.getLanePosition(congested_sequence[0])
+                tail_position = traci.vehicle.getLanePosition(congested_sequence[-1])
                 continue
         else:
             congested_sequence = []

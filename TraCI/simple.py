@@ -29,6 +29,8 @@ r_exit_exit_vehicle = []
 canceled_vehicle = []
 canceled_veh_without_collied_veh = []
 collision_history = []  # 各要素は (time, vehicle_id1, vehicle_id2) のタプル
+total_collisions = 0
+total_vehicles_involved = 0
 
 
 lane0_queue = []
@@ -36,7 +38,8 @@ lane1_queue = []
 lane2_queue = []
 
 CONGESTION_SPEED = 11.1  # m/s (40 km/h) 渋滞判定の速度
-MIN_CONGESTED_VEHICLES = 5  # 渋滞判定の最低車両数
+LANE2_MIN_CONGESTED_VEHICLES = 5  # Lane2での渋滞判定の最低車両数
+LANE1_MIN_CONGESTED_VEHICLES = 2  # Lane1での渋滞判定の最低車両数
 
 
 def run(inflow_pass, inflow_exit):
@@ -58,6 +61,9 @@ def run(inflow_pass, inflow_exit):
         running_list = traci.vehicle.getIDList()
 
         poplist = []
+
+        lane_2_congestion_tail_point = _getLane2CongestionPoint()
+        lane_1_congestion_head_point = _getLane1CongestionPoint()
 
         for index, ins in enumerate(vehicle_instance):
             # シミュレーション範囲を出た車両をリスト化
@@ -106,7 +112,11 @@ def run(inflow_pass, inflow_exit):
             # 自身の行動(Priority)を更新
             ins.decideNextActionAndPriority()
             # 車線変更を実行
-            ins.executeLaneChange(lane_change_history)
+            ins.executeLaneChange(
+                lane_change_history,
+                lane_2_congestion_tail_point,
+                lane_1_congestion_head_point,
+            )
             # 車両の速度を更新
             ins.controlSpeed()
 
@@ -157,6 +167,8 @@ def run(inflow_pass, inflow_exit):
         # "lane1_queue": lane1_queue,
         # "lane2_queue": lane2_queue,
         "traffic_volume": len(total_departed_vehicle) * (3600 / simulation_time),
+        "total_collisions": total_collisions,
+        "total_vehicles_involved": total_vehicles_involved,
     }
     stats.add_result(simulation_time, seed, inflow_pass, inflow_exit, results)
 
@@ -193,7 +205,6 @@ def _set_environment(inflow_pass: int, inflow_exit: int):
 def _printSImulationInfoAtEnd(running_list):
     print("=====================================")
     print("simulation end")
-
     # 生成された車輌インスタンスの数
     print("vehicle_instance Length :", veh_id)
     # 最後までシミュレーション内部に残っている車輌の数
@@ -277,6 +288,64 @@ def _getDepartLane(edge_id):
         departLane = random.choice(min_queue_lanes)
 
     return departLane
+
+
+# Lane2での渋滞が発生しているポイントを調査
+def _getLane2CongestionPoint():
+    lane2_vehicles = traci.lane.getLastStepVehicleIDs("MainLane1_2")
+    if len(lane2_vehicles) < LANE2_MIN_CONGESTED_VEHICLES:
+        return None
+
+    sorted_vehicles = sorted(
+        lane2_vehicles,
+        key=lambda x: traci.vehicle.getLanePosition(x),
+        reverse=True,
+    )
+
+    congested_sequence = []
+    tail_position = None
+    for veh_id in sorted_vehicles:
+        speed = traci.vehicle.getSpeed(veh_id)
+
+        if speed <= CONGESTION_SPEED:
+            congested_sequence.append(veh_id)
+            if len(congested_sequence) >= LANE2_MIN_CONGESTED_VEHICLES:
+                tail_position = traci.vehicle.getLanePosition(congested_sequence[-1])
+                continue
+        else:
+            congested_sequence = []
+            continue
+
+    return tail_position
+
+
+# Lane1での渋滞が発生しているポイントを調査
+def _getLane1CongestionPoint():
+    lane1_vehicles = traci.lane.getLastStepVehicleIDs("MainLane1_1")
+    if len(lane1_vehicles) < LANE1_MIN_CONGESTED_VEHICLES:
+        return None
+
+    sorted_vehicles = sorted(
+        lane1_vehicles,
+        key=lambda x: traci.vehicle.getLanePosition(x),
+        reverse=True,
+    )
+
+    congested_sequence = []
+    head_position = None
+    for veh_id in sorted_vehicles:
+        speed = traci.vehicle.getSpeed(veh_id)
+
+        if speed <= CONGESTION_SPEED:
+            congested_sequence.append(veh_id)
+            if len(congested_sequence) >= LANE1_MIN_CONGESTED_VEHICLES:
+                head_position = traci.vehicle.getLanePosition(congested_sequence[0])
+                continue
+        else:
+            congested_sequence = []
+            continue
+
+    return head_position
 
 
 def _shouldContinueSimWithVehiclesCount():
