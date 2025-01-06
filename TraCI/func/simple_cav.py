@@ -54,6 +54,7 @@ class SimpleCAV:
         self.status = CarStatus.NORMAL
         self.action = CarAction.STAY
         self.priority = 0  # 0(normal), 1(emergency)
+        self.lane_change_pending = False
         self.last_lane_change_time = None  # Sumo Time
         self.receiving_cooperative_from_id = None  # 協調中に譲ってもらう車両のID
         self.providing_cooperative_to_id = None  # 協調して譲る車両のID
@@ -208,8 +209,7 @@ class SimpleCAV:
 
     """ 自身のステータスを更新 """
 
-    def updateStatus(self, lane_2_congestion_tail_point, lane_1_congestion_head_point):
-        # lane_1_congestion_head_pointは使用していない
+    def updateStatus(self):
         self.simTime = traci.simulation.getTime()
 
         # update own position
@@ -234,8 +234,11 @@ class SimpleCAV:
         self._calculateSafetyGap()
 
         # 分流車両の車線変更が間に合わない場合優先度を最大にする
-        # 分岐地点の50m手前で車線変更できていない場合は優先度を最大にする
-        if self.road == "MainLane1" and self.lane_pos > MAINLANE_LENGTH - LANE_CHANGE_MARGIN_CONGESTED:
+        # 分岐地点のLANE_CHANGE_MARGIN_CONGESTED手前で車線変更できていない場合は優先度を最大にする
+        if (
+            self.road == "MainLane1"
+            and self.lane_pos > MAINLANE_LENGTH - LANE_CHANGE_MARGIN_CONGESTED
+        ):
             if self.route == "r_exit" and self.lane != 2:
                 self.action = CarAction.CHANGE_LEFT
                 self.status = CarStatus.LANE_CHANGING
@@ -246,7 +249,7 @@ class SimpleCAV:
 
         # 車線変更が可能なポイントを通過したら車線変更を可能にする
         if self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
-            if self._hasPassedLaneChangePoint(lane_2_congestion_tail_point, lane_1_congestion_head_point):
+            if self._hasPassedLaneChangePoint():
                 self.lane_change_status = LaneChangeStatus.ALL_ALLOWED
                 # 協調車線変更が可能になったタイミングで行動を初期化, 協調中であればそのステータスは維持
                 self._resetLaneChangeStateKeepYielding()
@@ -384,7 +387,9 @@ class SimpleCAV:
             return
 
         # 協調フェーズの場合は加速は行わない
-        if self.status == CarStatus.YIELDING or self.status == CarStatus.LANE_CHANGING:
+        if (
+            self.status == CarStatus.YIELDING or self.status == CarStatus.LANE_CHANGING
+        ) and self.lane_change_pending == False:
             self.do_not_speed_up = True
         else:
             self.do_not_speed_up = False
@@ -436,7 +441,12 @@ class SimpleCAV:
 
     """ 車線変更を実行 """
 
-    def executeLaneChange(self, lane_change_history):
+    def executeLaneChange(
+        self,
+        lane_change_history,
+        lane_2_congestion_tail_point,
+        lane_1_congestion_head_point,
+    ):
         if (
             self.lane_change_status == LaneChangeStatus.UNAVAILABLE
             and self.priority != 1
@@ -445,6 +455,30 @@ class SimpleCAV:
 
         if self.action == CarAction.STAY:
             return
+
+        # Lane2渋滞時、より分岐近くで車線変更を行う
+        if self.lane == 0:
+            self.lane_change_pending = False
+        elif (
+            # Lane2が渋滞していて、自身が渋滞時車線変更位置より手前にいる場合
+            lane_2_congestion_tail_point is not None
+            and lane_2_congestion_tail_point
+            < MAINLANE_LENGTH - LANE_CHANGE_MARGIN_DEFAULT
+            and self.lane_pos < MAINLANE_LENGTH - LANE_CHANGE_MARGIN_CONGESTED
+        ):
+            if (
+                # Lane1が渋滞していて、その先頭が渋滞時車線変更位置より分岐側にいる場合
+                lane_1_congestion_head_point is not None
+                and lane_1_congestion_head_point
+                > MAINLANE_LENGTH - LANE_CHANGE_MARGIN_CONGESTED - 80
+            ):
+                self.lane_change_pending = False
+            else:
+                self.lane_change_pending = True
+                self._resetYieldingVehicleState()
+                return
+        else:
+            self.lane_change_pending = False
 
         # 車線変更開始地点以前の車線変更は協調しない
         if self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
@@ -558,15 +592,9 @@ class SimpleCAV:
 
     """ 車線変更が可能なポイントを通過したかどうか """
 
-    def _hasPassedLaneChangePoint(self, lane_2_congestion_tail_point, lane_1_congestion_head_point):
+    def _hasPassedLaneChangePoint(self):
         current_pos = self.lane_pos
-        if (
-            lane_2_congestion_tail_point is not None
-            and lane_2_congestion_tail_point < MAINLANE_LENGTH - LANE_CHANGE_MARGIN_DEFAULT
-        ):
-            merge_start_pos = MAINLANE_LENGTH - LANE_CHANGE_MARGIN_CONGESTED
-        else:
-            merge_start_pos = MAINLANE_LENGTH - LANE_CHANGE_MARGIN_DEFAULT
+        merge_start_pos = MAINLANE_LENGTH - LANE_CHANGE_MARGIN_DEFAULT
 
         if current_pos > merge_start_pos:
             return True
@@ -763,6 +791,7 @@ class SimpleCAV:
         self.current_distance_from_leader = None
         self.lane_change_leader_speed = None
         self.do_not_speed_up = False
+        self.lane_change_pending = False
         self._resetYieldingVehicleState()
 
     def _resetLaneChangeStateKeepYielding(self):
@@ -776,6 +805,7 @@ class SimpleCAV:
         self.current_distance_from_leader = None
         self.lane_change_leader_speed = None
         self.do_not_speed_up = False
+        self.lane_change_pending = False
         self._resetYieldingVehicleState()
 
     def _resetYieldingVehicleState(self):
