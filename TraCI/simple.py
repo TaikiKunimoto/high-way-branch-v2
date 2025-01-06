@@ -39,7 +39,7 @@ CONGESTION_SPEED = 11.1  # m/s (40 km/h) 渋滞判定の速度
 MIN_CONGESTED_VEHICLES = 5  # 渋滞判定の最低車両数
 
 
-def run(inflow_pass=750, inflow_exit=750):
+def run(inflow_pass, inflow_exit):
     _set_environment(inflow_pass, inflow_exit)
 
     while _shouldContinueSimWithSimulationTime():
@@ -47,12 +47,13 @@ def run(inflow_pass=750, inflow_exit=750):
 
         _check_collision()
 
+        # step毎の車線変更履歴を初期化
+        lane_change_history = {}
+
         # このstepでシミュレーション範囲を出た車輌のリスト
         arrived_list = traci.simulation.getArrivedIDList()
-
         # このstepでシミュレーション範囲に入った車輌のリスト
         departed_list = traci.simulation.getDepartedIDList()
-
         # このstepで走行中の車輌のリスト
         running_list = traci.vehicle.getIDList()
 
@@ -105,7 +106,7 @@ def run(inflow_pass=750, inflow_exit=750):
             # 自身の行動(Priority)を更新
             ins.decideNextActionAndPriority()
             # 車線変更を実行
-            ins.executeLaneChange()
+            ins.executeLaneChange(lane_change_history)
             # 車両の速度を更新
             ins.controlSpeed()
 

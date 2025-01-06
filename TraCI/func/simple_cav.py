@@ -423,7 +423,7 @@ class SimpleCAV:
 
     """ 車線変更を実行 """
 
-    def executeLaneChange(self):
+    def executeLaneChange(self, lane_change_history):
         if (
             self.lane_change_status == LaneChangeStatus.UNAVAILABLE
             and self.priority != 1
@@ -442,17 +442,23 @@ class SimpleCAV:
 
         direction = "left" if self.action == CarAction.CHANGE_LEFT else "right"
         lane_change_amount = 1 if direction == "left" else -1
+        target_lane = self.lane + lane_change_amount
 
-        if self._canChangeLane(direction):
+        if self._canChangeLane(direction, lane_change_history):
             # 意図しない挙動でシミュレーションが止まるのを防ぐ 衝突は消滅したけど一応残した
             if self.road != "MainLane1":
                 self._resetLaneChangeState()
                 return
 
-            self.last_lane_change_time = self.simTime
-
             # 車線変更が可能な場合は実行
-            traci.vehicle.changeLane(self.id, self.lane + lane_change_amount, 0)
+            traci.vehicle.changeLane(self.id, target_lane, 0)
+
+            # 車線変更情報を辞書に記録
+            lane_change_history[self.id] = {
+                "lane": target_lane,
+                "pos": self.lane_pos,
+            }
+            self.last_lane_change_time = self.simTime
             # 車線変更中のステータスをリセット
             self._resetLaneChangeState()
         else:
@@ -758,11 +764,21 @@ class SimpleCAV:
     """ 車線変更が安全かどうか """
     """ 最大加減速度、車間距離、一つ挟んだ車線とのコリジョンを考慮 """
 
-    def _canChangeLane(self, direction):
+    def _canChangeLane(self, direction, lane_change_history):
         target_lane = self.lane + (1 if direction == "left" else -1)
+        check_range = self.length + minGap
+
+        # 同一ステップでの車線変更を考慮する
+        for changed_veh_id, changed_info in lane_change_history.items():
+            # 変更先レーンが同じかどうか確認
+            if changed_info["lane"] == target_lane:
+                # レーン上のポジションを比較（ここでは lane_pos での比較例）
+                if abs(changed_info["pos"] - self.lane_pos) < check_range:
+                    return False
+
+        # 一つ挟んだ車線とのコリジョンを考慮
         if target_lane == 1 and self.road == "MainLane1":
             own_pos = self.lane_pos
-            check_range = self.safety_gap
 
             opposite_lane = 2 if self.lane == 0 else 0
             opposite_lane_vehicle_ids = traci.lane.getLastStepVehicleIDs(
