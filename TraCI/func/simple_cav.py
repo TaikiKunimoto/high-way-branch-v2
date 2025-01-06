@@ -205,7 +205,6 @@ class SimpleCAV:
 
     def updateStatus(self):
         self.simTime = traci.simulation.getTime()
-        self.speed_history.append(traci.vehicle.getSpeed(self.id))
 
         # update own position
         pos = traci.vehicle.getPosition(self.id)
@@ -215,6 +214,7 @@ class SimpleCAV:
 
         self.angle = traci.vehicle.getAngle(self.id)
         self.speed = traci.vehicle.getSpeed(self.id)
+        self.speed_history.append(self.speed)
         self.accel = traci.vehicle.getAcceleration(self.id)
         self.road = traci.vehicle.getRoadID(self.id)
         self.lane = traci.vehicle.getLaneIndex(self.id)
@@ -309,13 +309,6 @@ class SimpleCAV:
             self.status == CarStatus.LANE_CHANGING or self.status == CarStatus.YIELDING
         ):
             return
-        
-        # 連続して車線変更を行わないための制御
-        if self.last_lane_change_time is not None:
-            if self.simTime - self.last_lane_change_time < 5:
-                self.action = CarAction.STAY
-                self.priority = 0
-                return
 
         # 現在のレーンと経路に基づくルールを取得
         if self.lane != 1:
@@ -350,6 +343,7 @@ class SimpleCAV:
         if not rule:
             self.action = CarAction.STAY
             self.priority = 0
+            self.status = CarStatus.NORMAL
             return
 
         # 条件を満たすか確認
@@ -362,6 +356,17 @@ class SimpleCAV:
 
         if self.action != CarAction.STAY:
             self.status = CarStatus.LANE_CHANGING
+        else:
+            self.status = CarStatus.NORMAL
+
+        # 連続して車線変更を行わないための制御
+        # 車輌の優先度を付与した後にそれを容認するかどうかを判断する
+        if self.last_lane_change_time is not None and self.priority != 1:
+            if self.simTime - self.last_lane_change_time < 5:
+                self.action = CarAction.STAY
+                self.priority = 0
+                self.status = CarStatus.NORMAL
+                return
 
     """ 車両の速度を調整 """
 
@@ -439,7 +444,6 @@ class SimpleCAV:
         elif self.lane_change_status == LaneChangeStatus.ALL_ALLOWED:
             cooperation_mode = True
 
-
         direction = "left" if self.action == CarAction.CHANGE_LEFT else "right"
         lane_change_amount = 1 if direction == "left" else -1
         target_lane = self.lane + lane_change_amount
@@ -463,18 +467,8 @@ class SimpleCAV:
             self._resetLaneChangeState()
         else:
             if cooperation_mode:
-                # 新たに協調車両を決定するため過去の情報をリセット
-                if self.receiving_cooperative_from_id is not None:
-                    supporting_vehicle = vehicle_instances[
-                        self.receiving_cooperative_from_id
-                    ]
-                    supporting_vehicle.status = CarStatus.NORMAL
-                    supporting_vehicle.priority = 0
-                    supporting_vehicle.providing_cooperative_to_id = None
-                    supporting_vehicle.do_not_speed_up = False
-                    self.receiving_cooperative_from_id = None
+                # 協調車輌は毎stepで探索するが、同一の場合にはリセットは行わない
                 self._decideYieldingVehicle()
-                self._requestCooperation()
                 # 協調車輌と自身の速度を調整
                 self._adjustSpeedForCooperation()
             else:
@@ -679,12 +673,12 @@ class SimpleCAV:
         self, requesting_speed, current_distance, required_distance
     ):
         if current_distance is None or required_distance is None:
-            return requesting_speed * 0.7
+            return requesting_speed * 0.5
 
         position_diff = required_distance - current_distance
 
         # 車間距離が不足 → より大きく減速して車間を開ける
-        deceleration_rate = position_diff / required_distance
+        deceleration_rate = min(position_diff / required_distance, 0.5)
         return requesting_speed * deceleration_rate
 
     """ 協調車両を決定 """
@@ -695,13 +689,18 @@ class SimpleCAV:
         elif self.action == CarAction.CHANGE_RIGHT:
             candidates = self.right_followers
         else:
+            if self.receiving_cooperative_from_id is not None:
+                self._resetYieldingVehicleState()
             return
 
         if not candidates:
+            if self.receiving_cooperative_from_id is not None:
+                self._resetYieldingVehicleState()
             return
 
         # 優先順位に基づいて候補を選定
         viable_candidates = []
+        new_receiving_cooperative_from_id = None
 
         for vehicle_id, distance in candidates:
             if vehicle_id in vehicle_instances:
@@ -716,11 +715,29 @@ class SimpleCAV:
         if viable_candidates:
             if self.speed == 0:
                 # 速度が0の場合は最も近い車両の次に近い車両を選択
-                self.receiving_cooperative_from_id = (
+                new_receiving_cooperative_from_id = (
                     viable_candidates[1][0] if len(viable_candidates) > 1 else None
                 )
             # 速度が0でない場合は最も近い車両を選択
-            self.receiving_cooperative_from_id = viable_candidates[0][0]
+            new_receiving_cooperative_from_id = viable_candidates[0][0]
+
+        if new_receiving_cooperative_from_id is None:
+            if self.receiving_cooperative_from_id is not None:
+                self._resetYieldingVehicleState()
+            return
+
+        if self.receiving_cooperative_from_id is not None:
+            if new_receiving_cooperative_from_id != self.receiving_cooperative_from_id:
+                # 新たに協調車両を決定するため過去の情報をリセット
+                self._resetYieldingVehicleState()
+                self.receiving_cooperative_from_id = new_receiving_cooperative_from_id
+                self._requestCooperation()
+            else:
+                # 既に協調車両が決定されている場合はそのまま
+                return
+        else:
+            self.receiving_cooperative_from_id = new_receiving_cooperative_from_id
+            self._requestCooperation()
 
     def _resetLaneChangeState(self):
         self.status = CarStatus.NORMAL
@@ -732,14 +749,7 @@ class SimpleCAV:
         self.current_distance_from_leader = None
         self.lane_change_leader_speed = None
         self.do_not_speed_up = False
-
-        if self.receiving_cooperative_from_id in vehicle_instances:
-            supporting_vehicle = vehicle_instances[self.receiving_cooperative_from_id]
-            supporting_vehicle.status = CarStatus.NORMAL
-            supporting_vehicle.priority = 0
-            supporting_vehicle.providing_cooperative_to_id = None
-            supporting_vehicle.do_not_speed_up = False
-            self.receiving_cooperative_from_id = None
+        self._resetYieldingVehicleState()
 
     def _resetLaneChangeStateKeepYielding(self):
         if self.status != CarStatus.YIELDING:
@@ -752,13 +762,17 @@ class SimpleCAV:
         self.current_distance_from_leader = None
         self.lane_change_leader_speed = None
         self.do_not_speed_up = False
+        self._resetYieldingVehicleState()
 
+    def _resetYieldingVehicleState(self):
         if self.receiving_cooperative_from_id in vehicle_instances:
             supporting_vehicle = vehicle_instances[self.receiving_cooperative_from_id]
-            supporting_vehicle.status = CarStatus.NORMAL
-            supporting_vehicle.priority = 0
             supporting_vehicle.providing_cooperative_to_id = None
             supporting_vehicle.do_not_speed_up = False
+            if supporting_vehicle.action != CarAction.STAY:
+                supporting_vehicle.status = CarStatus.LANE_CHANGING
+            else:
+                supporting_vehicle.status = CarStatus.NORMAL
             self.receiving_cooperative_from_id = None
 
     """ 車線変更が安全かどうか """
