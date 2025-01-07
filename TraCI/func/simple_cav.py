@@ -476,7 +476,6 @@ class SimpleCAV:
             else:
                 self.lane_change_pending = True
                 self._resetYieldingVehicleState()
-                return
         else:
             self.lane_change_pending = False
 
@@ -508,6 +507,8 @@ class SimpleCAV:
             # 車線変更中のステータスをリセット
             self._resetLaneChangeState()
         else:
+            if self.lane_change_pending:
+                return
             if cooperation_mode:
                 # 協調車輌は毎stepで探索するが、同一の場合にはリセットは行わない
                 self._decideYieldingVehicle()
