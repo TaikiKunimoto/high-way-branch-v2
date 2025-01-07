@@ -3,7 +3,6 @@ dist/
 *.pyc
 __pycache__/
 
-*.csv
 statistics
 
 .DS_Store

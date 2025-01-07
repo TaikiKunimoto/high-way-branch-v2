@@ -12,7 +12,7 @@ from func.simple_cav import SimpleCAV
 from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 
-simulation_time = 400.0 
+simulation_time = 600.0
 
 veh_id = 0
 
@@ -433,6 +433,10 @@ def _get_options():
     return options
 
 
+def _create_file_name():
+    return f"simple_{inflow_pass}_{inflow_exit}_{seed}"
+
+
 if __name__ == "__main__":
     # コマンドライン引数を取得
     options = _get_options()
@@ -442,8 +446,9 @@ if __name__ == "__main__":
     inflow_pass = int(args[2])  # 車両の流入数 pass
     inflow_exit = int(args[3])  # 車両の流入数 exit
 
+    filename = _create_file_name()
     stats = SimulationStatistics(
-        filename="simple", output_dir="simulationStatistics/statistics/simple"
+        filename=filename, output_dir="simulationStatistics/statistics/simple"
     )
 
     # this script has been called from the command line. It will start sumo as a server, then connect and run
