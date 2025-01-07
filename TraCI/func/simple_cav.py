@@ -457,7 +457,7 @@ class SimpleCAV:
             return
 
         # Lane2渋滞時、より分岐近くで車線変更を行う
-        if self.lane == 0:
+        if self.lane == 0 or self.route != "r_exit":
             self.lane_change_pending = False
         elif (
             # Lane2が渋滞していて、自身が渋滞時車線変更位置より手前にいる場合
