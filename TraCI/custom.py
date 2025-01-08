@@ -13,7 +13,7 @@ from func.custom_cav import CustomCAV
 from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 
-simulation_time = 50.0
+simulation_time = 600.0
 
 veh_id = 0
 
