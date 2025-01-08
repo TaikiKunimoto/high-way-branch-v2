@@ -133,7 +133,8 @@ class SimulationStatistics:
             "min_TTC",
             "TET",
             "total_collisions",
-            "total_vehicles_involved"
+            "total_vehicles_involved",
+            "max_tail_position",
         ]
         with open(self.filename, "w", newline="") as f:
             writer = csv.writer(f)
@@ -172,7 +173,8 @@ class SimulationStatistics:
             self.min_TTC,
             self.total_TET,
             results["total_collisions"],
-            results["total_vehicles_involved"]
+            results["total_vehicles_involved"],
+            results["max_tail_position"],
         ]
 
         with open(self.filename, "a", newline="") as f:

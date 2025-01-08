@@ -2,6 +2,7 @@
 提案の相手となるモデル, 車線変更開始位置は固定 & 車線変更に優先度はない
 """
 
+import csv
 import optparse
 import random
 import sys
@@ -40,10 +41,14 @@ lane2_queue = []
 CONGESTION_SPEED = 11.1  # m/s (40 km/h) 渋滞判定の速度
 LANE2_MIN_CONGESTED_VEHICLES = 5  # Lane2での渋滞判定の最低車両数
 LANE1_MIN_CONGESTED_VEHICLES = 2  # Lane1での渋滞判定の最低車両数
+MAINLANE_LENGTH = 1500  # m
 
 
 def run(inflow_pass, inflow_exit):
     _set_environment(inflow_pass, inflow_exit)
+
+    tail_position_list = []
+    max_tail_position = 0
 
     while _shouldContinueSimWithSimulationTime():
         traci.simulationStep()
@@ -64,6 +69,12 @@ def run(inflow_pass, inflow_exit):
 
         lane_2_congestion_tail_point = _getLane2CongestionPoint()
         lane_1_congestion_head_point = _getLane1CongestionPoint()
+
+        # tail position を記録
+        current_time = traci.simulation.getTime()
+        tail_position_list.append((current_time, MAINLANE_LENGTH - lane_2_congestion_tail_point))
+        if MAINLANE_LENGTH - lane_2_congestion_tail_point > max_tail_position:
+            max_tail_position = MAINLANE_LENGTH - lane_2_congestion_tail_point
 
         for index, ins in enumerate(vehicle_instance):
             # シミュレーション範囲を出た車両をリスト化
@@ -150,7 +161,16 @@ def run(inflow_pass, inflow_exit):
     ]
 
     _printSImulationInfoAtEnd(running_list)
-    _print_collision_summary()
+    total_collisions, total_vehicles_involved = _print_collision_summary()
+
+    # tail_position_list を CSV に保存
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    tail_position_csv = f"simulationStatistics/statistics/simple/tail_positions_pass{inflow_pass}_exit{inflow_exit}_seed{seed}_{timestamp}.csv"
+    with open(tail_position_csv, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["time", "tail_position"])
+        for time_step, tail_pos in tail_position_list:
+            writer.writerow([time_step, tail_pos])
 
     # シミュレーション結果をcsvファイルに保存
     results = {
@@ -169,6 +189,7 @@ def run(inflow_pass, inflow_exit):
         "traffic_volume": len(total_departed_vehicle) * (3600 / simulation_time),
         "total_collisions": total_collisions,
         "total_vehicles_involved": total_vehicles_involved,
+        "max_tail_position": max_tail_position,
     }
     stats.add_result(simulation_time, seed, inflow_pass, inflow_exit, results)
 
@@ -237,6 +258,8 @@ def _print_collision_summary():
     for time, vehicles in collision_history:
         print(f"Time {time:.1f}: Collision between vehicles: {', '.join(vehicles)}")
 
+    return total_collisions, total_vehicles_involved
+
 
 def _check_collision():
     colliding_ids = traci.simulation.getCollidingVehiclesIDList()
@@ -294,7 +317,7 @@ def _getDepartLane(edge_id):
 def _getLane2CongestionPoint():
     lane2_vehicles = traci.lane.getLastStepVehicleIDs("MainLane1_2")
     if len(lane2_vehicles) < LANE2_MIN_CONGESTED_VEHICLES:
-        return None
+        return MAINLANE_LENGTH
 
     sorted_vehicles = sorted(
         lane2_vehicles,
@@ -303,7 +326,7 @@ def _getLane2CongestionPoint():
     )
 
     congested_sequence = []
-    tail_position = None
+    tail_position = MAINLANE_LENGTH
     for veh_id in sorted_vehicles:
         speed = traci.vehicle.getSpeed(veh_id)
 
@@ -434,7 +457,7 @@ def _get_options():
 
 
 def _create_file_name():
-    return f"simple_{inflow_pass}_{inflow_exit}_{seed}"
+    return f"simple_pass{inflow_pass}_exit{inflow_exit}_seed{seed}"
 
 
 if __name__ == "__main__":

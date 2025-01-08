@@ -564,11 +564,16 @@ class CustomCAV:
     """ 車線変更が可能なポイントを通過したかどうか """
 
     def _hasPassedLaneChangePoint(self, congestion_point):
-        lane_length = traci.lane.getLength("MainLane1_2")
         current_pos = self.lane_pos
 
-        if congestion_point is None:
-            merge_start_pos = lane_length - LANE_CHANGE_MARGIN_DEFAULT
+        if (
+            congestion_point is None
+            or congestion_point
+            > MAINLANE_LENGTH
+            - LANE_CHANGE_MARGIN_DEFAULT
+            + LANE_CHANGE_MARGIN_CONGESTED  # 1200m地点
+        ):
+            merge_start_pos = MAINLANE_LENGTH - LANE_CHANGE_MARGIN_DEFAULT
         else:
             merge_start_pos = congestion_point - LANE_CHANGE_MARGIN_CONGESTED
 
