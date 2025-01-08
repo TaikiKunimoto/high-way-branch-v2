@@ -279,7 +279,7 @@ class CustomCAV:
                 # 協調車両同士が同じレーンにいる場合は協調関係を解消
                 if self.lane == supporting_vehicle.lane:
                     print(
-                        f"Error: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but they are in the same lane"
+                        f"Warning: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but they are in the same lane"
                     )
                     supporting_vehicle._resetLaneChangeState()
 
@@ -287,20 +287,20 @@ class CustomCAV:
                 if supporting_vehicle.action == CarAction.CHANGE_LEFT:
                     if supporting_vehicle.lane != self.lane - 1:
                         print(
-                            f"Error: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but the target lane is not correct"
+                            f"Warning: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but the target lane is not correct"
                         )
                         supporting_vehicle._resetLaneChangeState()
                 elif supporting_vehicle.action == CarAction.CHANGE_RIGHT:
                     if supporting_vehicle.lane != self.lane + 1:
                         print(
-                            f"Error: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but the target lane is not correct"
+                            f"Warning: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but the target lane is not correct"
                         )
                         supporting_vehicle._resetLaneChangeState()
 
                 # use in debug
                 if self.id != supporting_vehicle.receiving_cooperative_from_id:
                     print(
-                        f"Error: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but receiving cooperation from {supporting_vehicle.receiving_cooperative_from_id}"
+                        f"Warning: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but receiving cooperation from {supporting_vehicle.receiving_cooperative_from_id}"
                     )
 
     """ 自身の行動（priority） を決定 """
