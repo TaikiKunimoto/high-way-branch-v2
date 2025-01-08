@@ -47,6 +47,7 @@ MAINLANE_LENGTH = 1500  # m
 def run(inflow_pass, inflow_exit):
     _set_environment(inflow_pass, inflow_exit)
 
+    last_recorded_sec = 0
     tail_position_list = []
     max_tail_position = 0
 
@@ -72,9 +73,13 @@ def run(inflow_pass, inflow_exit):
 
         # tail position を記録
         current_time = traci.simulation.getTime()
-        tail_position_list.append((current_time, MAINLANE_LENGTH - lane_2_congestion_tail_point))
-        if MAINLANE_LENGTH - lane_2_congestion_tail_point > max_tail_position:
-            max_tail_position = MAINLANE_LENGTH - lane_2_congestion_tail_point
+        current_sec = int(current_time)
+        if current_sec != last_recorded_sec:
+            tail_pos = MAINLANE_LENGTH - lane_2_congestion_tail_point
+            tail_position_list.append((current_time, tail_pos))
+            if tail_pos > max_tail_position:
+                max_tail_position = tail_pos
+            last_recorded_sec = current_sec
 
         for index, ins in enumerate(vehicle_instance):
             # シミュレーション範囲を出た車両をリスト化
@@ -164,8 +169,7 @@ def run(inflow_pass, inflow_exit):
     total_collisions, total_vehicles_involved = _print_collision_summary()
 
     # tail_position_list を CSV に保存
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    tail_position_csv = f"simulationStatistics/statistics/simple/tail_positions_pass{inflow_pass}_exit{inflow_exit}_seed{seed}_{timestamp}.csv"
+    tail_position_csv = f"simulationStatistics/statistics/simple/tail_positions_pass{inflow_pass}_exit{inflow_exit}_seed{seed}.csv"
     with open(tail_position_csv, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["time", "tail_position"])
