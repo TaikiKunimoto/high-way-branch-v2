@@ -490,7 +490,7 @@ def _plot_time_space_diagram(output_dir="simulationStatistics/statistics/simple"
         plt.title(f"Time-Space Diagram for {lane}")
 
         # ファイル保存
-        output_path = os.path.join(output_dir, f"{lane}_time_space_diagram.png")
+        output_path = os.path.join(output_dir, f"simple_{lane}_time_space_diagram.png")
         plt.savefig(output_path)
         plt.close()
 
