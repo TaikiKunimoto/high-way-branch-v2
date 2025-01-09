@@ -1,4 +1,7 @@
 statistics/custom/*/*.csv
+statistics/custom/*/*.png
 statistics/custom/*.csv
+
 statistics/simple/*/*.csv
+statistics/simple/*/*.png
 statistics/simple/*.csv
