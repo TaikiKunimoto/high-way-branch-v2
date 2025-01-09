@@ -4,10 +4,13 @@
 
 import csv
 import optparse
+import os
 import random
 import sys
 from datetime import datetime
 
+import matplotlib.pyplot as plt
+import numpy as np
 import traci
 from func.custom_cav import CustomCAV
 from simulationStatistics.simulation_statistics import SimulationStatistics
@@ -31,6 +34,8 @@ canceled_vehicle = []
 canceled_veh_without_collied_veh = []
 collision_history = []  # 各要素は (time, vehicle_id1, vehicle_id2) のタプル
 
+# タイムスペース図記録用リスト
+lane_data = {"lane0": [], "lane1": [], "lane2": []}  # 各車線ごとのデータを保持
 
 lane0_queue = []
 lane1_queue = []
@@ -140,6 +145,8 @@ def run(inflow_pass, inflow_exit):
             if ins.leader_distance is not None:
                 stats.calculate_TTC(ins.leader_distance, ins.leader_speed, ins.speed)
 
+            _record_lane_data(ins.laneID, ins.lane_pos, ins.speed)
+
         # 車両インスタンスを削除
         if poplist:
             for i in sorted(poplist, reverse=True):
@@ -166,6 +173,9 @@ def run(inflow_pass, inflow_exit):
         writer.writerow(["time", "tail_position"])
         for time_step, tail_pos in tail_position_list:
             writer.writerow([time_step, tail_pos])
+
+    # タイムスペース図をプロット
+    _plot_time_space_diagram()
 
     # シミュレーション結果をcsvファイルに保存
     results = {
@@ -407,6 +417,44 @@ def _add_vehicle():
             lane2_queue.append(str(veh_id))
 
         veh_id += 1
+
+
+def _record_lane_data(lane_id, pos, speed):
+    if seed != "1":
+        return
+
+    current_time = traci.simulation.getTime()
+
+    if "MainLane1_0" in lane_id:
+        lane_data["lane0"].append((current_time, pos, speed))
+    elif "MainLane1_1" in lane_id:
+        lane_data["lane1"].append((current_time, pos, speed))
+    elif "MainLane1_2" in lane_id:
+        lane_data["lane2"].append((current_time, pos, speed))
+
+
+# タイムスペース図のプロット
+def _plot_time_space_diagram(output_dir="simulationStatistics/statistics/custom"):
+    if seed != "1":
+        return
+    # 保存先ディレクトリが存在しない場合は作成
+    os.makedirs(output_dir, exist_ok=True)
+
+    for lane, data in lane_data.items():
+        if not data:
+            continue
+        times, positions, speeds = zip(*data)
+        plt.figure(figsize=(12, 6))
+        sc = plt.scatter(times, positions, c=speeds, cmap="jet_r", s=1)
+        plt.colorbar(sc, label="Speed (m/s)")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Position (m)")
+        plt.title(f"Time-Space Diagram for {lane}")
+
+        # ファイル保存
+        output_path = os.path.join(output_dir, f"{lane}_time_space_diagram.png")
+        plt.savefig(output_path)
+        plt.close()
 
 
 def _get_options():
