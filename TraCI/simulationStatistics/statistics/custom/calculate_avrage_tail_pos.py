@@ -10,10 +10,10 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 seed_range = range(1, 11)  # 1～10
 
 # ファイルのベース名（"seed" の前まで）
-input_filename_base = "tail_positions_pass2940_exit1260_seed"
+input_filename_base = "tail_positions_pass2520_exit1080_seed"
 
 # 出力ファイル名
-output_filename = "custom_tail_positions_4200_30.csv"
+output_filename = "custom_tail_positions_3600_30.csv"
 # 出力先パスを組み立てる
 output_filepath = os.path.join(current_dir, output_filename)
 
