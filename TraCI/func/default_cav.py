@@ -26,7 +26,7 @@ frictionCoefficient = 0.7  # 摩擦係数
 
 timeStep = 0.1  # [s]
 
-mergeStartPos = 1100  # [m] 単純な手法の場合の車線変更開始地点(1500 - x)
+mergeStartPos = 1600  # [m] 単純な手法の場合の車線変更開始地点(2000 - x)
 
 # stats = SimulationStatistics()
 
