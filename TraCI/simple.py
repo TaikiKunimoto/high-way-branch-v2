@@ -46,7 +46,7 @@ lane2_queue = []
 CONGESTION_SPEED = 11.1  # m/s (40 km/h) 渋滞判定の速度
 LANE2_MIN_CONGESTED_VEHICLES = 5  # Lane2での渋滞判定の最低車両数
 LANE1_MIN_CONGESTED_VEHICLES = 5  # Lane1での渋滞判定の最低車両数
-MAINLANE_LENGTH = 2000  # m
+MAINLANE_LENGTH = 2500  # m
 
 
 def run(inflow_pass, inflow_exit):
