@@ -21,9 +21,7 @@ LANE_WIDTH = 3.2  # [m]
 LANE_CHANGE_MARGIN_DEFAULT = (
     400.0  # [m] 通常時に分岐地点の何メートル手前から車線変更を許可するか
 )
-LANE_CHANGE_MARGIN_CONGESTED = (
-    100.0  # [m] Lane2が混雑している際に分岐地点の何メートル手前から車線変更を許可するか
-)
+LANE_CHANGE_MARGIN_CONGESTED = 100.0  # [m] Lane2が混雑している際に渋滞最後尾の何m手前から車線変更を許可するか
 SPEED_IMPROVEMENT_THRESHOLD = 40.0  # 車線変更による速度改善の閾値 [%]
 MAINLANE_LENGTH = 1500  # [m]
 
