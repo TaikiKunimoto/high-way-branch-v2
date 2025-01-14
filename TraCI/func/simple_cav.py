@@ -923,7 +923,10 @@ class SimpleCAV:
         else:
             return False
 
-        if len(self.current_lane_leaders) == 0:
+        if (
+            self.current_lane_leaders is not None
+            and len(self.current_lane_leaders) == 0
+        ):
             return False
 
         if not target_lane_leaders:
