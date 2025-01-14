@@ -24,7 +24,7 @@ LANE_CHANGE_MARGIN_DEFAULT = (
 LANE_CHANGE_MARGIN_CONGESTED = (
     120.0  # [m] Lane2が混雑している際に分岐地点の何m手前から車線変更を許可するか
 )
-SPEED_IMPROVEMENT_THRESHOLD = 70.0  # 車線変更による速度改善の閾値 [%]
+SPEED_IMPROVEMENT_THRESHOLD = 40.0  # 車線変更による速度改善の閾値 [%]
 MAINLANE_LENGTH = 2500  # [m]
 
 timeStep = 0.1  # [s]
