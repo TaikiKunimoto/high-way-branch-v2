@@ -253,9 +253,7 @@ class CustomCAV:
                 self._resetLaneChangeStateKeepYielding()
 
         if self.lane_change_status == LaneChangeStatus.ALL_ALLOWED:
-            if self.road != "MainLane1" or self.lane_pos >= MAINLANE_LENGTH - (
-                self.length + minGap
-            ):
+            if self.road != "MainLane1" and self.priority != 7:
                 # 車線変更は禁止するが協調中のステータスは維持, 優先度が7の場合は車線変更可能
                 self.lane_change_status = LaneChangeStatus.UNAVAILABLE
                 self._resetLaneChangeStateKeepYielding()
