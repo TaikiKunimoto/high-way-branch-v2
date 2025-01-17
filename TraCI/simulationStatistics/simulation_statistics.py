@@ -44,11 +44,13 @@ class SimulationStatistics:
     # シミュレーション全体の平均 travel time を計算
     def _calculate_average_travel_time(self, total_travel_time, exit_vehicle):
         if len(exit_vehicle) == 0:
-            return 0
+            return
         return total_travel_time / len(exit_vehicle)
 
     # 車輌ごとの average speed を計算
     def calculate_vehicle_average_spped(self, route, speed_history: list):
+        if len(speed_history) == 0:
+            return
         ins_average_speed = sum(speed_history) / len(speed_history)
         self.vehcile_speed_data.append(ins_average_speed)
 
@@ -61,6 +63,8 @@ class SimulationStatistics:
 
     # シミュレーション全体での平均 speed を計算
     def _calculate_average_speed(self, vehicle_speed_data):
+        if len(vehicle_speed_data) == 0:
+            return
         return sum(vehicle_speed_data) / len(vehicle_speed_data)
 
     # 公平性指標を計算
