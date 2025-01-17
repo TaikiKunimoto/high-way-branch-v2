@@ -162,11 +162,12 @@ def run(inflow_pass, inflow_exit):
     # 環境に残っている車輌の平均速度も計算
     # 環境に残っている分流車輌の位置情報を記録（公平性計算のため）
     for ins in vehicle_instance:
-        if ins.route == "r_pass":
-            stats.calculate_vehicle_average_spped("r_pass", ins.speed_history)
-        elif ins.route == "r_exit":
-            stats.calculate_vehicle_average_spped("r_exit", ins.speed_history)
-            r_exit_running_vehicle_dict[ins.id] = ins.pos_x
+        if ins.id in running_list:
+            if ins.route == "r_pass":
+                stats.calculate_vehicle_average_spped("r_pass", ins.speed_history)
+            elif ins.route == "r_exit":
+                stats.calculate_vehicle_average_spped("r_exit", ins.speed_history)
+                r_exit_running_vehicle_dict[ins.id] = ins.pos_x
 
     # sort by position
     r_exit_running_vehicle_dict = dict(
