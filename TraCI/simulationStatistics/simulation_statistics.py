@@ -43,6 +43,8 @@ class SimulationStatistics:
 
     # シミュレーション全体の平均 travel time を計算
     def _calculate_average_travel_time(self, total_travel_time, exit_vehicle):
+        if len(exit_vehicle) == 0:
+            return 0
         return total_travel_time / len(exit_vehicle)
 
     # 車輌ごとの average speed を計算
@@ -64,20 +66,35 @@ class SimulationStatistics:
     # 公平性指標を計算
     def _calculate_fairness_index(self, results):
         overtake_count = 0
-        exit_order = {
-            veh_id: i for i, veh_id in enumerate(results["r_exit_exit_vehicle"])
-        }
+        overtaking_vehicles = set()
         departed_order = {
             veh_id: i for i, veh_id in enumerate(results["r_exit_departed_vehicle"])
         }
+        # exit と running を結合
+        conbined = [
+            results["r_exit_exit_vehicle"],
+            results["r_exit_running_vehicle"],
+        ]
+        conbined_order = {
+            veh_id: i
+            for i, veh_id in enumerate(
+                [item for sublist in conbined for item in sublist]
+            )
+        }
 
-        # 各車両について、出口を出た順番が入った順番より早い場合（追い越しが発生）
-        for veh_id in results["r_exit_exit_vehicle"]:
-            if exit_order[veh_id] < departed_order[veh_id]:
-                # その車両が追い越した台数を計算（順番の差分）
-                overtake_count += departed_order[veh_id] - exit_order[veh_id]
+        # 追い越しの回数を計算（シミュレーション中の車輌も考慮）
+        for veh_id, dep_order in departed_order.items():
+            if veh_id in conbined_order:
+                current_order = conbined_order[veh_id]
+                if current_order < dep_order:
+                    overtake_count += dep_order - current_order
+                    overtaking_vehicles.add(veh_id)
 
-        return overtake_count
+        fairness_index = (
+            overtake_count / len(overtaking_vehicles) if overtake_count > 0 else 0
+        )
+
+        return overtake_count, len(overtaking_vehicles), fairness_index
 
     # Time-to-collision (TTC) を計算
     def calculate_TTC(self, distance, leader_speed, follower_speed):
@@ -118,9 +135,6 @@ class SimulationStatistics:
             "running_vehicles",
             "exited_vehicles",
             "canceled_vehicles",
-            # "lane0_queue",
-            # "lane1_queue",
-            # "lane2_queue",
             "traffic volume",
             "average_travel_time",
             "average_r_pass_travel_time",
@@ -128,8 +142,9 @@ class SimulationStatistics:
             "average_speed",
             "average_r_pass_speed",
             "average_r_exit_speed",
+            "overtaking_count",
+            "overtaiking_vehicle_count",
             "fairness_index",
-            # "emergency_brake_count",
             "min_TTC",
             "TET",
             "total_collisions",
@@ -141,6 +156,10 @@ class SimulationStatistics:
             writer.writerow(headers)
 
     def add_result(self, simulation_time, seed, inflow_pass, inflow_exit, results):
+        fairness_results = self._calculate_fairness_index(results)
+        overtake_count = fairness_results[0] # 追い越し回数
+        overtaking_vehicle_count = fairness_results[1] # 追い越し車輌数
+        fairness_index = fairness_results[2] # 公平性指標
         row = [
             simulation_time,
             seed,
@@ -153,23 +172,28 @@ class SimulationStatistics:
             len(results["running_vehicle"]),
             len(results["exit_vehicle"]),
             len(results["canceled_vehicle"]),
-            # len(results["lane0_queue"]),
-            # len(results["lane1_queue"]),
-            # len(results["lane2_queue"]),
             results["traffic_volume"],
             self._calculate_average_travel_time(
                 self.total_travel_time, results["exit_vehicle"]
-            ),
+            ),  # 環境を出た車輌の平均走行時間
             self._calculate_average_travel_time(
                 self.r_pass_total_travel_time, results["r_pass_exit_vehicle"]
-            ),
+            ),  # 環境を出たr_pass車輌の平均走行時間
             self._calculate_average_travel_time(
                 self.r_exit_total_travel_time, results["r_exit_exit_vehicle"]
-            ),
-            self._calculate_average_speed(self.vehcile_speed_data),
-            self._calculate_average_speed(self.r_pass_vehicle_speed_data),
-            self._calculate_average_speed(self.r_exit_vehicle_speed_data),
-            self._calculate_fairness_index(results),
+            ),  # 環境を出たr_exit車輌の平均走行時間
+            self._calculate_average_speed(
+                self.vehcile_speed_data
+            ),  # 環境に残っている車輌を含めた平均速度
+            self._calculate_average_speed(
+                self.r_pass_vehicle_speed_data
+            ),  # 環境に残っているr_pass車輌を含めた平均速度
+            self._calculate_average_speed(
+                self.r_exit_vehicle_speed_data
+            ),  # 環境に残っているr_exit車輌を含めた平均速度
+            overtake_count,
+            overtaking_vehicle_count,
+            fairness_index,
             self.min_TTC,
             self.total_TET,
             results["total_collisions"],
