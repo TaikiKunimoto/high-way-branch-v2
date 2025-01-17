@@ -26,13 +26,11 @@ departTime_r_exit = []
 vehicle_instance = []
 total_departed_vehicle = []
 exit_vehicle = []
-r_pass_departed_vehicle = []
-r_exit_departed_vehicle = []
-r_pass_exit_vehicle = []
-r_exit_exit_vehicle = []
 canceled_vehicle = []
 canceled_veh_without_collied_veh = []
 collision_history = []  # 各要素は (time, vehicle_id1, vehicle_id2) のタプル
+total_collisions = 0
+total_vehicles_involved = 0
 
 # タイムスペース図記録用リスト
 lane_data = {"lane0": [], "lane1": [], "lane2": []}  # 各車線ごとのデータを保持
@@ -53,6 +51,12 @@ def run(inflow_pass, inflow_exit):
     last_recorded_second = 0
     tail_position_list = []
     max_tail_position = 0
+    r_pass_departed_vehicle = []
+    r_exit_departed_vehicle = []
+    r_pass_exit_vehicle = []
+    r_exit_exit_vehicle = []
+    r_exit_running_vehicle_dict = {}
+    r_exit_running_vehicle_list = []
 
     while _shouldContinueSimWithSimulationTime():
         traci.simulationStep()
@@ -162,6 +166,20 @@ def run(inflow_pass, inflow_exit):
         # 車両の追加
         _add_vehicle()
 
+    # 環境に残っている車輌の平均速度も計算
+    for ins in vehicle_instance:
+        if ins.route == "r_pass":
+            stats.calculate_vehicle_average_spped("r_pass", ins.speed_history)
+        elif ins.route == "r_exit":
+            stats.calculate_vehicle_average_spped("r_exit", ins.speed_history)
+            r_exit_running_vehicle_dict[ins.id] = ins.pos_x
+
+    # sort by position
+    r_exit_running_vehicle_dict = dict(
+        sorted(r_exit_running_vehicle_dict.items(), key=lambda x: x[1], reverse=True)
+    )
+    r_exit_running_vehicle_list = list(r_exit_running_vehicle_dict.keys())
+
     collided_vehicles = set()
     for _, vehicles in collision_history:
         collided_vehicles.update(vehicles)
@@ -194,10 +212,8 @@ def run(inflow_pass, inflow_exit):
         "r_exit_departed_vehicle": r_exit_departed_vehicle,
         "r_pass_exit_vehicle": r_pass_exit_vehicle,
         "r_exit_exit_vehicle": r_exit_exit_vehicle,
+        "r_exit_running_vehicle": r_exit_running_vehicle_list,
         "canceled_vehicle": canceled_veh_without_collied_veh,
-        # "lane0_queue": lane0_queue,
-        # "lane1_queue": lane1_queue,
-        # "lane2_queue": lane2_queue,
         "traffic_volume": len(total_departed_vehicle) * (3600 / simulation_time),
         "total_collisions": total_collisions,
         "total_vehicles_involved": total_vehicles_involved,
