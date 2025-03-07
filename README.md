@@ -1,7 +1,9 @@
 ## 環境構築
 poetryを利用して依存環境をインストールします．
 1. `curl -sSL https://install.python-poetry.org | python3 -`  
-2. `poetry install --no-root`
+2. `poetry lock`
+3. `poetry install --no-root`
+4. `cmd + p` で workspace と検索し，`Open Workspace` をクリックしてワークスペース内で開発を行う
 
 ------------------------------
 
