@@ -1,9 +1,8 @@
 import csv
-import os
 from datetime import datetime
+import os
 
 time_step = 0.1  # [s]
-
 
 
 class SimulationStatistics:
@@ -71,20 +70,13 @@ class SimulationStatistics:
     def _calculate_fairness_index(self, results):
         overtake_count = 0
         overtaking_vehicles = set()
-        departed_order = {
-            veh_id: i for i, veh_id in enumerate(results["r_exit_departed_vehicle"])
-        }
+        departed_order = {veh_id: i for i, veh_id in enumerate(results["r_exit_departed_vehicle"])}
         # exit と running を結合
         conbined = [
             results["r_exit_exit_vehicle"],
             results["r_exit_running_vehicle"],
         ]
-        conbined_order = {
-            veh_id: i
-            for i, veh_id in enumerate(
-                [item for sublist in conbined for item in sublist]
-            )
-        }
+        conbined_order = {veh_id: i for i, veh_id in enumerate([item for sublist in conbined for item in sublist])}
 
         # 追い越しの回数を計算（シミュレーション中の車輌も考慮）
         for veh_id, dep_order in departed_order.items():
@@ -94,9 +86,7 @@ class SimulationStatistics:
                     overtake_count += dep_order - current_order
                     overtaking_vehicles.add(veh_id)
 
-        fairness_index = (
-            overtake_count / len(overtaking_vehicles) if overtake_count > 0 else 0
-        )
+        fairness_index = overtake_count / len(overtaking_vehicles) if overtake_count > 0 else 0
 
         return overtake_count, len(overtaking_vehicles), fairness_index
 
@@ -161,9 +151,9 @@ class SimulationStatistics:
 
     def add_result(self, simulation_time, seed, inflow_pass, inflow_exit, results):
         fairness_results = self._calculate_fairness_index(results)
-        overtake_count = fairness_results[0] # 追い越し回数
-        overtaking_vehicle_count = fairness_results[1] # 追い越し車輌数
-        fairness_index = fairness_results[2] # 公平性指標
+        overtake_count = fairness_results[0]  # 追い越し回数
+        overtaking_vehicle_count = fairness_results[1]  # 追い越し車輌数
+        fairness_index = fairness_results[2]  # 公平性指標
         row = [
             simulation_time,
             seed,
@@ -186,9 +176,7 @@ class SimulationStatistics:
             self._calculate_average_travel_time(
                 self.r_exit_total_travel_time, results["r_exit_exit_vehicle"]
             ),  # 環境を出たr_exit車輌の平均走行時間
-            self._calculate_average_speed(
-                self.vehcile_speed_data
-            ),  # 環境に残っている車輌を含めた平均速度
+            self._calculate_average_speed(self.vehcile_speed_data),  # 環境に残っている車輌を含めた平均速度
             self._calculate_average_speed(
                 self.r_pass_vehicle_speed_data
             ),  # 環境に残っているr_pass車輌を含めた平均速度

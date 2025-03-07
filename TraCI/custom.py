@@ -3,18 +3,19 @@
 """
 
 import csv
+from datetime import datetime
 import optparse
 import os
 import random
 import sys
-from datetime import datetime
 
+from cav.custom_cav import CustomCAV
 import matplotlib.pyplot as plt
 import numpy as np
-import traci
-from cav.custom_cav import CustomCAV
 from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
+
+import traci
 
 simulation_time = 600.0
 
@@ -94,15 +95,11 @@ def run(inflow_pass, inflow_exit):
                 ins.get_arrival_time()
                 # 車輌の travel time と average speed を計算
                 if ins.route == "r_pass":
-                    stats.calculate_travel_time(
-                        "r_pass", ins.departure_time, ins.arrival_time
-                    )
+                    stats.calculate_travel_time("r_pass", ins.departure_time, ins.arrival_time)
                     stats.calculate_vehicle_average_spped("r_pass", ins.speed_history)
                     r_pass_exit_vehicle.append(ins.id)
                 elif ins.route == "r_exit":
-                    stats.calculate_travel_time(
-                        "r_exit", ins.departure_time, ins.arrival_time
-                    )
+                    stats.calculate_travel_time("r_exit", ins.departure_time, ins.arrival_time)
                     stats.calculate_vehicle_average_spped("r_exit", ins.speed_history)
                     r_exit_exit_vehicle.append(ins.id)
                 continue
@@ -170,24 +167,22 @@ def run(inflow_pass, inflow_exit):
                 r_exit_running_vehicle_dict[ins.id] = ins.pos_x
 
     # sort by position
-    r_exit_running_vehicle_dict = dict(
-        sorted(r_exit_running_vehicle_dict.items(), key=lambda x: x[1], reverse=True)
-    )
+    r_exit_running_vehicle_dict = dict(sorted(r_exit_running_vehicle_dict.items(), key=lambda x: x[1], reverse=True))
     r_exit_running_vehicle_list = list(r_exit_running_vehicle_dict.keys())
 
     collided_vehicles = set()
     for _, vehicles in collision_history:
         collided_vehicles.update(vehicles)
 
-    canceled_veh_without_collied_veh = [
-        veh_id for veh_id in canceled_vehicle if veh_id not in collided_vehicles
-    ]
+    canceled_veh_without_collied_veh = [veh_id for veh_id in canceled_vehicle if veh_id not in collided_vehicles]
 
     _printSImulationInfoAtEnd(running_list)
     total_collisions, total_vehicles_involved = _print_collision_summary()
 
     # tail_position_list を CSV に保存
-    tail_position_csv = f"simulationStatistics/statistics/custom/tail_positions_pass{inflow_pass}_exit{inflow_exit}_seed{seed}.csv"
+    tail_position_csv = (
+        f"simulationStatistics/statistics/custom/tail_positions_pass{inflow_pass}_exit{inflow_exit}_seed{seed}.csv"
+    )
     with open(tail_position_csv, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["time", "tail_position"])
@@ -258,9 +253,7 @@ def _printSImulationInfoAtEnd(running_list):
     # シミュレーションに入った車輌の数
     print("total_departed_vehicle Length :", len(total_departed_vehicle))
     # １時間あたりの交通量
-    print(
-        f"traffic volume: {len(total_departed_vehicle) * (3600 / simulation_time)} pcu/h"
-    )
+    print(f"traffic volume: {len(total_departed_vehicle) * (3600 / simulation_time)} pcu/h")
     # シミュレーション中に混雑で道路に入れなかった車両の数
     print("canceled_vehicle Length :", len(canceled_veh_without_collied_veh))
     # シミュレーション終了時の各レーンのキューの長さ
@@ -295,9 +288,7 @@ def _check_collision():
                 return
 
         collision_history.append((collision_time, colliding_ids))
-        print(
-            f"Collision detected at time {collision_time:.1f} between vehicles: {', '.join(colliding_ids)}"
-        )
+        print(f"Collision detected at time {collision_time:.1f} between vehicles: {', '.join(colliding_ids)}")
 
 
 def _updateLaneQueue(id: str):
@@ -328,9 +319,7 @@ def _getDepartLane(edge_id):
     else:
         # 最小キューのレーンを取得し、その中からランダムに選択
         min_queue_length = min(queue_length.values())
-        min_queue_lanes = [
-            lane for lane, length in queue_length.items() if length == min_queue_length
-        ]
+        min_queue_lanes = [lane for lane, length in queue_length.items() if length == min_queue_length]
         departLane = random.choice(min_queue_lanes)
 
     return departLane
@@ -505,9 +494,7 @@ if __name__ == "__main__":
     inflow_exit = int(args[3])  # 車両の流入数 exit
 
     filename = _create_file_name()
-    stats = SimulationStatistics(
-        filename=filename, output_dir="simulationStatistics/statistics/custom"
-    )
+    stats = SimulationStatistics(filename=filename, output_dir="simulationStatistics/statistics/custom")
 
     # this script has been called from the command line. It will start sumo as a server, then connect and run
     if options.nogui:

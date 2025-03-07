@@ -1,11 +1,10 @@
 import copy
 import math
 import os
-import sys
 from re import S
+import sys
 
 import numpy as np
-
 from simulationStatistics.simulation_statistics import SimulationStatistics
 
 if "SUMO_HOME" in os.environ:
@@ -107,23 +106,24 @@ class DefaultCAV:
         self.speed_history = []
 
     """ 車輌の実際の出発時刻を取得 """
+
     def get_departure_time(self):
         self.departure_time = traci.vehicle.getDeparture(self.id)
 
-    """ 車輌の実際の到着時刻を取得 """ 
+    """ 車輌の実際の到着時刻を取得 """
+
     def get_arrival_time(self):
         self.arrival_time = traci.simulation.getTime()
 
     """ 自身のステータスを更新 """
+
     def updateStatus(self):
         self.simTime = traci.simulation.getTime()
         self.speed_history.append(traci.vehicle.getSpeed(self.id))
 
         # 車線変更が可能なポイントを通過したら車線変更を可能にする
         if self.hasPassedLaneChangePoint():
-            traci.vehicle.setLaneChangeMode(
-                vehID=self.id, laneChangeMode=0b011000010101
-            )
+            traci.vehicle.setLaneChangeMode(vehID=self.id, laneChangeMode=0b011000010101)
 
         # update own position
         pos = traci.vehicle.getPosition(self.id)
@@ -136,21 +136,19 @@ class DefaultCAV:
         self.road = traci.vehicle.getRoadID(self.id)
         self.lane = traci.vehicle.getLaneIndex(self.id)
         self.laneID = traci.vehicle.getLaneID(self.id)
-        self.leader = traci.vehicle.getLeader(
-            self.id, 0
-        )  # 0 にすると制動距離より短い距離の先行車を取得
+        self.leader = traci.vehicle.getLeader(self.id, 0)  # 0 にすると制動距離より短い距離の先行車を取得
         self.distance = self.leader[1] if self.leader is not None else None
-        self.leader_speed = (
-            traci.vehicle.getSpeed(self.leader[0]) if self.leader is not None else None
-        )
+        self.leader_speed = traci.vehicle.getSpeed(self.leader[0]) if self.leader is not None else None
 
     """ 車線変更が可能なポイントを通過したかどうか """
+
     def hasPassedLaneChangePoint(self):
         if traci.vehicle.getLanePosition(self.id) > mergeStartPos:
             return True
         return False
 
     """ 車両の速度を制限速度に基づいて調整 """
+
     def controlSpeed(self):
         # 無効な道路上の場合は制御しない
         if self.road is None or self.road.startswith(":"):
@@ -167,6 +165,7 @@ class DefaultCAV:
         return
 
     """ 最大減速で速度差を0にするために必要な時間を計算 """
+
     def _calculateSafeDuration(self, speed_diff):
         if speed_diff <= 0:
             return 0

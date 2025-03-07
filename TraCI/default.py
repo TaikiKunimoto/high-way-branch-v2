@@ -2,16 +2,17 @@
 SUMOのデフォルトを使用したモデル
 """
 
+from datetime import datetime
 import optparse
 import os
 import random
 import sys
-from datetime import datetime
 
-import traci
 from cav.default_cav import DefaultCAV
 from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
+
+import traci
 
 simulation_time = 300.0  # 5min
 
@@ -60,15 +61,11 @@ def run(inflow_pass=750, inflow_exit=750):
                 ins.get_arrival_time()
                 # 車輌の travel time と average speed を計算
                 if ins.route == "r_pass":
-                    stats.calculate_travel_time(
-                        "r_pass", ins.departure_time, ins.arrival_time
-                    )
+                    stats.calculate_travel_time("r_pass", ins.departure_time, ins.arrival_time)
                     stats.calculate_vehicle_average_spped("r_pass", ins.speed_history)
                     r_pass_exit_vehicle.append(ins.id)
                 elif ins.route == "r_exit":
-                    stats.calculate_travel_time(
-                        "r_exit", ins.departure_time, ins.arrival_time
-                    )
+                    stats.calculate_travel_time("r_exit", ins.departure_time, ins.arrival_time)
                     stats.calculate_vehicle_average_spped("r_exit", ins.speed_history)
                     r_exit_exit_vehicle.append(ins.id)
                 continue
@@ -177,9 +174,7 @@ def _printSImulationInfoAtEnd(running_list):
     # シミュレーションに入った車輌の数
     print("total_departed_vehicle Length :", len(total_departed_vehicle))
     # １時間あたりの交通量
-    print(
-        f"traffic volume: {len(total_departed_vehicle) * (3600 / simulation_time)} pcu/h"
-    )
+    print(f"traffic volume: {len(total_departed_vehicle) * (3600 / simulation_time)} pcu/h")
     # シミュレーション中に混雑で道路に入れなかった車両の数
     print("canceled_vehicle Length :", len(canceled_vehicle))
     # シミュレーション終了時の各レーンのキューの長さ
@@ -218,9 +213,7 @@ def _getDepartLane(edge_id):
     else:
         # 最小キューのレーンを取得し、その中からランダムに選択
         min_queue_length = min(queue_length.values())
-        min_queue_lanes = [
-            lane for lane, length in queue_length.items() if length == min_queue_length
-        ]
+        min_queue_lanes = [lane for lane, length in queue_length.items() if length == min_queue_length]
         departLane = random.choice(min_queue_lanes)
 
     return departLane
