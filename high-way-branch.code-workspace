@@ -29,7 +29,7 @@
       }
     },
     "ruff.enable": true,
-    "mypy-type-checker.args": ["--config-file=pyproject.toml"],
+    "mypy-type-checker.args": ["--config-file=${workspaceFolder:high-way-branch}/pyproject.toml"],
     "cSpell.words": [
       "sqlalchemy"
     ]

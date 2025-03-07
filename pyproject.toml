@@ -39,7 +39,6 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-# 必要なエラーコードを選択し、不要な警告を ignore で除外します
 select = ["E", "F", "W", "C", "B", "T", "R", "RUF"]
 ignore = [
   "E203",   # whitespace-before-punctuation
@@ -64,7 +63,7 @@ force-wrap-aliases = true
 [tool.mypy]
 namespace_packages = true
 explicit_package_bases = true
-plugins = "sqlalchemy.ext.mypy.plugin"
+strict = true
 
 [[tool.mypy.overrides]]
 module = [
