@@ -12,7 +12,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import traci
-from func.simple_cav import SimpleCAV
+from cav.simple_cav import SimpleCAV
 from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 

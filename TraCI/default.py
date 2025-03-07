@@ -9,7 +9,7 @@ import sys
 from datetime import datetime
 
 import traci
-from func.default_cav import DefaultCAV
+from cav.default_cav import DefaultCAV
 from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 
