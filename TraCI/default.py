@@ -23,7 +23,7 @@ SIM_TIME: float = 100.0  # 5min
 
 
 # シミュレーションに関する状態を保存するクラス
-class SimulationState:
+class DefaultSimulationState:
     def __init__(self, simulation_time: float):
         self.simulation_time: float = simulation_time  # シミュレーションの総時間
         self.veh_id: int = 0
@@ -42,7 +42,7 @@ class SimulationState:
         self.lane2_queue: list[str] = []
 
 
-def run(state: SimulationState, inflow_pass: int, inflow_exit: int, stats: SimulationStatistics, seed: str) -> None:
+def run(state: DefaultSimulationState, inflow_pass: int, inflow_exit: int, stats: SimulationStatistics, seed: str) -> None:
     _set_environment(state, inflow_pass, inflow_exit)
 
     while _shouldContinueSimWithSimulationTime(state):
@@ -146,7 +146,7 @@ def _startSim(sumoBinary: str) -> None:
 
 
 # 初期設定（車両の流入時間の設定）
-def _set_environment(state: SimulationState, inflow_pass: int, inflow_exit: int) -> None:
+def _set_environment(state: DefaultSimulationState, inflow_pass: int, inflow_exit: int) -> None:
     k_0 = int((state.simulation_time / 3600) * inflow_pass)
     k_1 = int((state.simulation_time / 3600) * inflow_exit)
 
@@ -162,7 +162,7 @@ def _set_environment(state: SimulationState, inflow_pass: int, inflow_exit: int)
     print("departTime_r_exit", state.departTime_r_exit)
 
 
-def _printSImulationInfoAtEnd(state: SimulationState, running_list: list[str]) -> None:
+def _printSImulationInfoAtEnd(state: DefaultSimulationState, running_list: list[str]) -> None:
     print("=====================================")
     print("simulation end")
 
@@ -186,7 +186,7 @@ def _printSImulationInfoAtEnd(state: SimulationState, running_list: list[str]) -
     print("=====================================")
 
 
-def _updateLaneQueue(state: SimulationState, id: str) -> None:
+def _updateLaneQueue(state: DefaultSimulationState, id: str) -> None:
     if id in state.lane0_queue:
         state.lane0_queue.remove(id)
     elif id in state.lane1_queue:
@@ -196,7 +196,7 @@ def _updateLaneQueue(state: SimulationState, id: str) -> None:
 
 
 # 車輌が侵入するレーンをランダムに決定
-def _getDepartLane(state: SimulationState, edge_id: str) -> str:
+def _getDepartLane(state: DefaultSimulationState, edge_id: str) -> str:
     lanes = traci.edge.getLaneNumber(edge_id)
     # 除外するレーンを指定
     exclude_lanes: list[str] = []  # 路肩がないので除外なし
@@ -225,7 +225,7 @@ def _shouldContinueSimWithVehiclesCount() -> bool:
     return True if numVehicles > 0 else False
 
 
-def _shouldContinueSimWithSimulationTime(state: SimulationState) -> bool:
+def _shouldContinueSimWithSimulationTime(state: DefaultSimulationState) -> bool:
     sumo_time = traci.simulation.getTime()
     if sumo_time % 10 == 0:
         now = datetime.now().time()
@@ -240,7 +240,7 @@ def _shouldContinueSimWithSimulationTime(state: SimulationState) -> bool:
     return True if sumo_time < state.simulation_time else False
 
 
-def _add_vehicle(state: SimulationState) -> None:
+def _add_vehicle(state: DefaultSimulationState) -> None:
     sumo_time = traci.simulation.getTime()
 
     # if sumo_time in departTime_r_pass:
@@ -322,5 +322,5 @@ if __name__ == "__main__":
         sumoBinary = checkBinary("sumo-gui")
 
     _startSim(sumoBinary)
-    state = SimulationState(SIM_TIME)
+    state = DefaultSimulationState(SIM_TIME)
     run(state, inflow_pass, inflow_exit, stats, seed)
