@@ -1,132 +1,120 @@
 import csv
-import os
 from datetime import datetime
+import os
+from typing import Any, Optional
 
-time_step = 0.1  # [s]
+from pydantic import BaseModel
 
+TIME_STEP = 0.1  # [s]
+TTC_THRESHOLD = 2.0  # TTCの閾値 [s]
+
+
+class SimulationStatsData(BaseModel):
+    total_travel_time: float = 0.0
+    r_pass_total_travel_time: float = 0.0
+    r_exit_total_travel_time: float = 0.0
+    vehcile_speed_data: list[float] = []
+    r_exit_vehicle_speed_data: list[float] = []
+    r_pass_vehicle_speed_data: list[float] = []
+    total_TET: float = 0.0  # Time Exposed TTC (TET) の累積値
+    min_TTC: float = float("inf")  # 記録された最小TTC
+    emergency_brake_count: int = 0  # 急ブレーキ回数
 
 
 class SimulationStatistics:
-    # 急ブレーキの回数
-    emergency_brake_count = 0
-
-    def __init__(self, filename, output_dir="simulationStatistics/statistics"):
+    def __init__(self, filename: str, output_dir: str = "simulationStatistics/statistics"):
+        self.data = SimulationStatsData()
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
         self.filename = self._create_filename(filename)
         self._create_csv_with_headers()
 
-        self.total_travel_time = 0  # 全車両の走行時間
-        self.r_pass_total_travel_time = 0  # r_pass車両の走行時間
-        self.r_exit_total_travel_time = 0  # r_exit車両の走行時間
-
-        self.vehcile_speed_data = []  # シミュレーションを完了した車輌の速度データ
-        self.r_pass_vehicle_speed_data = []  # r_pass車輌の速度データ
-        self.r_exit_vehicle_speed_data = []  # r_exit車輌の速度データ
-
-        # Time-to-collision (TTC)
-        self.TTC_THRESHOLD = 2.0  # TTCの閾値 [s]
-        self.total_TET = 0  # Time Exposed TTC (TET) の累積値
-        self.min_TTC = float("inf")  # 記録された最小TTC
-
-    # 車輌ごとの travel time を計算
-    def calculate_travel_time(self, route, departure_time, arrival_time):
-        ins_travel_time = arrival_time - departure_time
-        self.total_travel_time += ins_travel_time
+    def calculate_travel_time(self, route: str, departure_time: float, arrival_time: float) -> float:
+        """車両ごとの走行時間を計算し、累積値を更新"""
+        travel_time = arrival_time - departure_time
+        self.data.total_travel_time += travel_time
 
         if route == "r_pass":
-            self.r_pass_total_travel_time += ins_travel_time
+            self.data.r_pass_total_travel_time += travel_time
         elif route == "r_exit":
-            self.r_exit_total_travel_time += ins_travel_time
+            self.data.r_exit_total_travel_time += travel_time
 
-        return ins_travel_time
+        return travel_time
 
-    # シミュレーション全体の平均 travel time を計算
-    def _calculate_average_travel_time(self, total_travel_time, exit_vehicle):
-        if len(exit_vehicle) == 0:
-            return
+    def _calculate_average_travel_time(self, total_travel_time: float, exit_vehicle: list[str]) -> Optional[float]:
+        """全体または各グループの平均走行時間を計算"""
+        if not exit_vehicle:
+            return None
         return total_travel_time / len(exit_vehicle)
 
-    # 車輌ごとの average speed を計算
-    def calculate_vehicle_average_spped(self, route, speed_history: list):
-        if len(speed_history) == 0:
-            return
-        ins_average_speed = sum(speed_history) / len(speed_history)
-        self.vehcile_speed_data.append(ins_average_speed)
+    def calculate_vehicle_average_speed(self, route: str, speed_history: list[float]) -> Optional[float]:
+        """車両ごとに平均速度を計算し、各グループに保存"""
+        if not speed_history:
+            return None
+
+        average_speed = sum(speed_history) / len(speed_history)
+        self.data.vehcile_speed_data.append(average_speed)
 
         if route == "r_pass":
-            self.r_pass_vehicle_speed_data.append(ins_average_speed)
+            self.data.r_pass_vehicle_speed_data.append(average_speed)
         elif route == "r_exit":
-            self.r_exit_vehicle_speed_data.append(ins_average_speed)
+            self.data.r_exit_vehicle_speed_data.append(average_speed)
 
-        return ins_average_speed
+        return average_speed
 
-    # シミュレーション全体での平均 speed を計算
-    def _calculate_average_speed(self, vehicle_speed_data):
-        if len(vehicle_speed_data) == 0:
-            return
+    def _calculate_average_speed(self, vehicle_speed_data: list[float]) -> Optional[float]:
+        """リストに蓄積された速度データから平均速度を計算"""
+        if not vehicle_speed_data:
+            return None
         return sum(vehicle_speed_data) / len(vehicle_speed_data)
 
-    # 公平性指標を計算
-    def _calculate_fairness_index(self, results):
+    def _calculate_fairness_index(self, results: dict[str, Any]) -> tuple[int, int, float]:
+        """
+        追い越し回数と公平性指標を計算
+        ・results["r_exit_departed_vehicle"] の順序とresults["r_exit_exit_vehicle"] および results["r_exit_running_vehicle"] をもとに算出
+        """
         overtake_count = 0
         overtaking_vehicles = set()
-        departed_order = {
-            veh_id: i for i, veh_id in enumerate(results["r_exit_departed_vehicle"])
-        }
-        # exit と running を結合
-        conbined = [
-            results["r_exit_exit_vehicle"],
-            results["r_exit_running_vehicle"],
-        ]
-        conbined_order = {
-            veh_id: i
-            for i, veh_id in enumerate(
-                [item for sublist in conbined for item in sublist]
-            )
-        }
 
-        # 追い越しの回数を計算（シミュレーション中の車輌も考慮）
+        departed_order = {veh_id: i for i, veh_id in enumerate(results.get("r_exit_departed_vehicle", []))}
+        combined = results.get("r_exit_exit_vehicle", []) + results.get("r_exit_running_vehicle", [])
+        combined_order = {veh_id: i for i, veh_id in enumerate(combined)}
+
         for veh_id, dep_order in departed_order.items():
-            if veh_id in conbined_order:
-                current_order = conbined_order[veh_id]
+            if veh_id in combined_order:
+                current_order = combined_order[veh_id]
                 if current_order < dep_order:
                     overtake_count += dep_order - current_order
                     overtaking_vehicles.add(veh_id)
 
-        fairness_index = (
-            overtake_count / len(overtaking_vehicles) if overtake_count > 0 else 0
-        )
-
+        fairness_index = overtake_count / len(overtaking_vehicles) if overtaking_vehicles else 0
         return overtake_count, len(overtaking_vehicles), fairness_index
 
-    # Time-to-collision (TTC) を計算
-    def calculate_TTC(self, distance, leader_speed, follower_speed):
+    def calculate_TTC(self, distance: float, leader_speed: float, follower_speed: float) -> Optional[float]:
+        """Time-to-collision (TTC) を計算し、閾値以下の場合は TET を更新"""
         relative_speed = follower_speed - leader_speed
         if relative_speed <= 0:
             return None
 
         ttc = distance / relative_speed
 
-        # 最小TTC値の更新
-        if ttc < self.min_TTC:
-            self.min_TTC = ttc
+        if ttc < self.data.min_TTC:
+            self.data.min_TTC = ttc
 
-        # Time Exposed TTC (TET) の更新
-        if ttc < self.TTC_THRESHOLD:
-            self.total_TET += time_step
+        if ttc < TTC_THRESHOLD:
+            self.data.total_TET += TIME_STEP
 
         return ttc
 
-    # 急ブレーキの回数をカウント
-    def increment_emergency_brake(self):
-        SimulationStatistics.emergency_brake_count += 1
+    def increment_emergency_brake(self) -> None:
+        """急ブレーキの回数をインクリメント"""
+        self.data.emergency_brake_count += 1
 
-    def _create_filename(self, filename):
+    def _create_filename(self, filename: str) -> str:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
         return f"{self.output_dir}/{filename}_{timestamp}.csv"
 
-    def _create_csv_with_headers(self):
+    def _create_csv_with_headers(self) -> None:
         headers = [
             "simulation_time",
             "seed",
@@ -147,7 +135,7 @@ class SimulationStatistics:
             "average_r_pass_speed",
             "average_r_exit_speed",
             "overtaking_count",
-            "overtaiking_vehicle_count",
+            "overtaking_vehicle_count",
             "fairness_index",
             "min_TTC",
             "TET",
@@ -159,52 +147,46 @@ class SimulationStatistics:
             writer = csv.writer(f)
             writer.writerow(headers)
 
-    def add_result(self, simulation_time, seed, inflow_pass, inflow_exit, results):
-        fairness_results = self._calculate_fairness_index(results)
-        overtake_count = fairness_results[0] # 追い越し回数
-        overtaking_vehicle_count = fairness_results[1] # 追い越し車輌数
-        fairness_index = fairness_results[2] # 公平性指標
+    def add_result(
+        self, simulation_time: float, seed: str, inflow_pass: int, inflow_exit: int, results: dict[str, Any]
+    ) -> None:
+        """
+        シミュレーション結果を CSV に追記する
+        ※ results は各種車両の情報や衝突、交通量などを含む辞書とする
+        """
+        overtake_count, overtaking_vehicle_count, fairness_index = self._calculate_fairness_index(results)
         row = [
             simulation_time,
             seed,
             inflow_pass,
             inflow_exit,
-            results["total_generated_vehicle"],
-            len(results["total_departed_vehicle"]),
-            len(results["r_pass_departed_vehicle"]),
-            len(results["r_exit_departed_vehicle"]),
-            len(results["running_vehicle"]),
-            len(results["exit_vehicle"]),
-            len(results["canceled_vehicle"]),
-            results["traffic_volume"],
+            results.get("total_generated_vehicle"),
+            len(results.get("total_departed_vehicle", [])),
+            len(results.get("r_pass_departed_vehicle", [])),
+            len(results.get("r_exit_departed_vehicle", [])),
+            len(results.get("running_vehicle", [])),
+            len(results.get("exit_vehicle", [])),
+            len(results.get("canceled_vehicle", [])),
+            results.get("traffic_volume"),
+            self._calculate_average_travel_time(self.data.total_travel_time, results.get("exit_vehicle", [])),
             self._calculate_average_travel_time(
-                self.total_travel_time, results["exit_vehicle"]
-            ),  # 環境を出た車輌の平均走行時間
+                self.data.r_pass_total_travel_time, results.get("r_pass_exit_vehicle", [])
+            ),
             self._calculate_average_travel_time(
-                self.r_pass_total_travel_time, results["r_pass_exit_vehicle"]
-            ),  # 環境を出たr_pass車輌の平均走行時間
-            self._calculate_average_travel_time(
-                self.r_exit_total_travel_time, results["r_exit_exit_vehicle"]
-            ),  # 環境を出たr_exit車輌の平均走行時間
-            self._calculate_average_speed(
-                self.vehcile_speed_data
-            ),  # 環境に残っている車輌を含めた平均速度
-            self._calculate_average_speed(
-                self.r_pass_vehicle_speed_data
-            ),  # 環境に残っているr_pass車輌を含めた平均速度
-            self._calculate_average_speed(
-                self.r_exit_vehicle_speed_data
-            ),  # 環境に残っているr_exit車輌を含めた平均速度
+                self.data.r_exit_total_travel_time, results.get("r_exit_exit_vehicle", [])
+            ),
+            self._calculate_average_speed(self.data.vehcile_speed_data),
+            self._calculate_average_speed(self.data.r_pass_vehicle_speed_data),
+            self._calculate_average_speed(self.data.r_exit_vehicle_speed_data),
             overtake_count,
             overtaking_vehicle_count,
             fairness_index,
-            self.min_TTC,
-            self.total_TET,
-            results["total_collisions"],
-            results["total_vehicles_involved"],
-            results["max_tail_position"],
+            self.data.min_TTC,
+            self.data.total_TET,
+            results.get("total_collisions"),
+            results.get("total_vehicles_involved"),
+            results.get("max_tail_position"),
         ]
-
         with open(self.filename, "a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(row)
