@@ -1,4 +1,14 @@
+## 環境構築
+poetryを利用して依存環境をインストールします．
+1. `curl -sSL https://install.python-poetry.org | python3 -`  
+2. `poetry lock`
+3. `poetry install --no-root`
+4. `cmd + p` で workspace と検索し，`Open Workspace` をクリックしてワークスペース内で開発を行う
+
+------------------------------
+
 ## 実行方法
+実行ファイル，乱数seed値, 交通量を指定しシミュレーションを実行します．
 1. `cd TraCI`  
 2. `poetry run python main.py 1 1700 1700`
 

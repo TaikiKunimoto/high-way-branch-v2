@@ -1,0 +1,43 @@
+{
+  "folders": [
+    {
+      "name": "high-way-branch",
+      "path": "."
+    },
+    {
+      "path": "config"
+    },
+    {
+      "path": "TraCI"
+    }
+  ],
+  "settings": {
+    "editor.formatOnSave": true,
+    "editor.formatOnPaste": true,
+    "editor.formatOnType": true,
+    "json.format.keepLines": true,
+    "[json]": {
+      "editor.defaultFormatter": "vscode.json-language-features"
+    },
+    "[xml]": {
+      "editor.defaultFormatter": "vscode.html-language-features"
+    },
+    "[python]": {
+      "editor.defaultFormatter": "charliermarsh.ruff",
+      "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit"
+      }
+    },
+    "ruff.enable": true,
+    "mypy-type-checker.args": ["--config-file=${workspaceFolder:high-way-branch}/pyproject.toml"],
+    "cSpell.words": [
+      "sqlalchemy"
+    ]
+  },
+  "extensions": {
+    "recommendations": [
+      "charliermarsh.ruff",
+      "ms-python.mypy-type-checker"
+    ]
+  }
+}
