@@ -4,6 +4,18 @@ import sys
 from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel
+
+from cav.constants import (
+    FRICTION_COEFFICIENT,
+    LANE_CHANGE_MARGIN_DEFAULT,
+    MAINLANE_LENGTH,
+    MAX_ACCEL,
+    MAX_DECEL,
+    MAX_SPEED,
+    MIN_GAP,
+    REACTION_TIME,
+    SPEED_IMPROVEMENT_THRESHOLD,
+)
 from status.status import CarAction, CarStatus, LaneChangeStatus
 from utils.traci_wrapper import (
     get_lane_last_step_veh_ids,
@@ -29,19 +41,8 @@ else:
     sys.exit("please declare environment variable 'SUMO_HOME'")
 import traci
 
-MAX_SPEED = 27  # [m/s]
-MAX_ACCEL = 10.0  # [m/ss]
-MAX_DECEL = -5.0  # [m/ss]
-MIN_GAP = 2.8  # [m]
-REACTION_TIME = 0.75  # [s]
-FRICTION_COEFFICIENT = 0.7  # 摩擦係数
-LANE_WIDTH = 3.2  # [m]
-LANE_CHANGE_MARGIN_DEFAULT = 400.0  # [m] 分岐地点の何メートル手前から車線変更を許可するか
+# 手法固有の定数（共通定数は cav.constants からimport）
 LANE_CHANGE_MARGIN_CONGESTED = 120.0  # [m] Lane2が混雑している際に分岐地点の何m手前から車線変更を許可するか
-SPEED_IMPROVEMENT_THRESHOLD = 40.0  # 車線変更による速度改善の閾値 [%]
-MAINLANE_LENGTH = 2500  # [m]
-
-TIME_STEP = 0.1  # [s]
 
 vehicle_instances: Dict[str, "SimpleCAV"] = {}  # グローバルな車輌管理辞書
 
