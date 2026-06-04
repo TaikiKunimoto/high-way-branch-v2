@@ -8,6 +8,7 @@ import optparse
 import os
 import random
 import sys
+from typing import Any, Optional
 
 from cav.simple_cav import SimpleCAV
 import matplotlib.pyplot as plt
@@ -20,24 +21,28 @@ simulation_time = 600.0
 
 veh_id = 0
 
-departTime_r_pass = []
-departTime_r_exit = []
+departTime_r_pass: list[float] = []
+departTime_r_exit: list[float] = []
 
-vehicle_instance = []
-total_departed_vehicle = []
-exit_vehicle = []
-canceled_vehicle = []
-canceled_veh_without_collied_veh = []
-collision_history = []  # 各要素は (time, vehicle_id1, vehicle_id2) のタプル
+vehicle_instance: list[SimpleCAV] = []
+total_departed_vehicle: list[str] = []
+exit_vehicle: list[str] = []
+canceled_vehicle: list[str] = []
+canceled_veh_without_collied_veh: list[str] = []
+collision_history: list[tuple[float, list[str]]] = []  # 各要素は (time, vehicle_id1, vehicle_id2) のタプル
 total_collisions = 0
 total_vehicles_involved = 0
 
 # タイムスペース図記録用リスト
-lane_data = {"lane0": [], "lane1": [], "lane2": []}  # 各車線ごとのデータを保持
+lane_data: dict[str, list[tuple[float, float, float]]] = {
+    "lane0": [],
+    "lane1": [],
+    "lane2": [],
+}  # 各車線ごとのデータを保持
 
-lane0_queue = []
-lane1_queue = []
-lane2_queue = []
+lane0_queue: list[str] = []
+lane1_queue: list[str] = []
+lane2_queue: list[str] = []
 
 CONGESTION_SPEED = 11.1  # m/s (40 km/h) 渋滞判定の速度
 LANE2_MIN_CONGESTED_VEHICLES = 5  # Lane2での渋滞判定の最低車両数
@@ -45,18 +50,18 @@ LANE1_MIN_CONGESTED_VEHICLES = 5  # Lane1での渋滞判定の最低車両数
 MAINLANE_LENGTH = 2500  # m
 
 
-def run(inflow_pass, inflow_exit):
+def run(inflow_pass: int, inflow_exit: int) -> None:
     _set_environment(inflow_pass, inflow_exit)
 
     last_recorded_sec = 0
-    tail_position_list = []
-    max_tail_position = 0
-    r_pass_departed_vehicle = []
-    r_exit_departed_vehicle = []
-    r_pass_exit_vehicle = []
-    r_exit_exit_vehicle = []
-    r_exit_running_vehicle_dict = {}
-    r_exit_running_vehicle_list = []
+    tail_position_list: list[tuple[float, float]] = []
+    max_tail_position = 0.0
+    r_pass_departed_vehicle: list[str] = []
+    r_exit_departed_vehicle: list[str] = []
+    r_pass_exit_vehicle: list[str] = []
+    r_exit_exit_vehicle: list[str] = []
+    r_exit_running_vehicle_dict: dict[str, float] = {}
+    r_exit_running_vehicle_list: list[str] = []
 
     while _shouldContinueSimWithSimulationTime():
         traci.simulationStep()
@@ -64,7 +69,7 @@ def run(inflow_pass, inflow_exit):
         _check_collision()
 
         # step毎の車線変更履歴を初期化
-        lane_change_history = {}
+        lane_change_history: dict[str, dict[str, Any]] = {}
 
         # このstepでシミュレーション範囲を出た車輌のリスト
         arrived_list = traci.simulation.getArrivedIDList()
@@ -97,12 +102,14 @@ def run(inflow_pass, inflow_exit):
                 ins.get_arrival_time()
                 # 車輌の travel time と average speed を計算
                 if ins.route == "r_pass":
-                    stats.calculate_travel_time("r_pass", ins.departure_time, ins.arrival_time)
-                    stats.calculate_vehicle_average_spped("r_pass", ins.speed_history)
+                    if ins.departure_time is not None and ins.arrival_time is not None:
+                        stats.calculate_travel_time("r_pass", ins.departure_time, ins.arrival_time)
+                    stats.calculate_vehicle_average_speed("r_pass", ins.speed_history)
                     r_pass_exit_vehicle.append(ins.id)
                 elif ins.route == "r_exit":
-                    stats.calculate_travel_time("r_exit", ins.departure_time, ins.arrival_time)
-                    stats.calculate_vehicle_average_spped("r_exit", ins.speed_history)
+                    if ins.departure_time is not None and ins.arrival_time is not None:
+                        stats.calculate_travel_time("r_exit", ins.departure_time, ins.arrival_time)
+                    stats.calculate_vehicle_average_speed("r_exit", ins.speed_history)
                     r_exit_exit_vehicle.append(ins.id)
                 continue
 
@@ -149,10 +156,11 @@ def run(inflow_pass, inflow_exit):
             _updateLaneQueue(ins.id)
 
             # TTCを計算
-            if ins.leader_distance is not None:
+            if ins.leader_distance is not None and ins.leader_speed is not None:
                 stats.calculate_TTC(ins.leader_distance, ins.leader_speed, ins.speed)
 
-            _record_lane_data(ins.laneID, ins.lane_pos, ins.speed)
+            if ins.laneID is not None and ins.lane_pos is not None:
+                _record_lane_data(ins.laneID, ins.lane_pos, ins.speed)
 
         # 車両インスタンスを削除
         if poplist:
@@ -167,10 +175,11 @@ def run(inflow_pass, inflow_exit):
     for ins in vehicle_instance:
         if ins.id in running_list:
             if ins.route == "r_pass":
-                stats.calculate_vehicle_average_spped("r_pass", ins.speed_history)
+                stats.calculate_vehicle_average_speed("r_pass", ins.speed_history)
             elif ins.route == "r_exit":
-                stats.calculate_vehicle_average_spped("r_exit", ins.speed_history)
-                r_exit_running_vehicle_dict[ins.id] = ins.pos_x
+                stats.calculate_vehicle_average_speed("r_exit", ins.speed_history)
+                if ins.pos_x is not None:
+                    r_exit_running_vehicle_dict[ins.id] = ins.pos_x
 
     # sort by position
     r_exit_running_vehicle_dict = dict(sorted(r_exit_running_vehicle_dict.items(), key=lambda x: x[1], reverse=True))
@@ -221,13 +230,13 @@ def run(inflow_pass, inflow_exit):
 
 
 # シミュレーションを開始する
-def _startSim():
+def _startSim() -> None:
     traci.start([sumoBinary, "-c", "../config/high-way.sumocfg"])
     print("Simulation started")
 
 
 # 初期設定（車両の流入時間の設定）
-def _set_environment(inflow_pass: int, inflow_exit: int):
+def _set_environment(inflow_pass: int, inflow_exit: int) -> None:
     global vehicle_instance
     global veh_id
     global departTime_r_pass, departTime_r_exit
@@ -247,7 +256,7 @@ def _set_environment(inflow_pass: int, inflow_exit: int):
     print("departTime_r_exit", departTime_r_exit)
 
 
-def _printSImulationInfoAtEnd(running_list):
+def _printSImulationInfoAtEnd(running_list: list[str]) -> None:
     print("=====================================")
     print("simulation end")
     # 生成された車輌インスタンスの数
@@ -269,7 +278,7 @@ def _printSImulationInfoAtEnd(running_list):
     print("=====================================")
 
 
-def _print_collision_summary():
+def _print_collision_summary() -> tuple[int, int]:
     total_collisions = len(collision_history)
     total_vehicles_involved = sum(len(vehicles) for _, vehicles in collision_history)
 
@@ -283,8 +292,8 @@ def _print_collision_summary():
     return total_collisions, total_vehicles_involved
 
 
-def _check_collision():
-    colliding_ids = traci.simulation.getCollidingVehiclesIDList()
+def _check_collision() -> None:
+    colliding_ids: list[str] = traci.simulation.getCollidingVehiclesIDList()
     if len(colliding_ids) > 0:
         collision_time = traci.simulation.getTime()
 
@@ -297,7 +306,7 @@ def _check_collision():
         print(f"Collision detected at time {collision_time:.1f} between vehicles: {', '.join(colliding_ids)}")
 
 
-def _updateLaneQueue(id: str):
+def _updateLaneQueue(id: str) -> None:
     if id in lane0_queue:
         lane0_queue.remove(id)
     elif id in lane1_queue:
@@ -307,10 +316,10 @@ def _updateLaneQueue(id: str):
 
 
 # 車輌が侵入するレーンをランダムに決定
-def _getDepartLane(edge_id):
+def _getDepartLane(edge_id: str) -> str:
     lanes = traci.edge.getLaneNumber(edge_id)
     # 除外するレーンを指定
-    exclude_lanes = []  # 路肩がないので除外なし
+    exclude_lanes: list[str] = []  # 路肩がないので除外なし
     available_lanes = [str(i) for i in range(lanes) if str(i) not in exclude_lanes]
 
     # 各レーンのキューの長さを取得
@@ -332,8 +341,8 @@ def _getDepartLane(edge_id):
 
 
 # Lane2での渋滞が発生しているポイントを調査
-def _getLane2CongestionPoint():
-    lane2_vehicles = traci.lane.getLastStepVehicleIDs("MainLane1_2")
+def _getLane2CongestionPoint() -> float:
+    lane2_vehicles: list[str] = traci.lane.getLastStepVehicleIDs("MainLane1_2")
     if len(lane2_vehicles) < LANE2_MIN_CONGESTED_VEHICLES:
         return MAINLANE_LENGTH
 
@@ -361,8 +370,8 @@ def _getLane2CongestionPoint():
 
 
 # Lane1での渋滞が発生しているポイントを調査
-def _getLane1CongestionPoint():
-    lane1_vehicles = traci.lane.getLastStepVehicleIDs("MainLane1_1")
+def _getLane1CongestionPoint() -> Optional[float]:
+    lane1_vehicles: list[str] = traci.lane.getLastStepVehicleIDs("MainLane1_1")
     if len(lane1_vehicles) < LANE1_MIN_CONGESTED_VEHICLES:
         return None
 
@@ -389,12 +398,12 @@ def _getLane1CongestionPoint():
     return head_position
 
 
-def _shouldContinueSimWithVehiclesCount():
+def _shouldContinueSimWithVehiclesCount() -> bool:
     numVehicles = traci.simulation.getMinExpectedNumber()
     return True if numVehicles > 0 else False
 
 
-def _shouldContinueSimWithSimulationTime():
+def _shouldContinueSimWithSimulationTime() -> bool:
     sumo_time = traci.simulation.getTime()
     if sumo_time % 10 == 0:
         now = datetime.now().time()
@@ -409,7 +418,7 @@ def _shouldContinueSimWithSimulationTime():
     return True if sumo_time < simulation_time else False
 
 
-def _add_vehicle():
+def _add_vehicle() -> None:
     global veh_id
     global departTime_r_pass, departTime_r_exit
     sumo_time = traci.simulation.getTime()
@@ -461,7 +470,7 @@ def _add_vehicle():
         veh_id += 1
 
 
-def _record_lane_data(lane_id, pos, speed):
+def _record_lane_data(lane_id: str, pos: float, speed: float) -> None:
     if seed != "1":
         return
 
@@ -476,7 +485,7 @@ def _record_lane_data(lane_id, pos, speed):
 
 
 # タイムスペース図のプロット
-def _plot_time_space_diagram(output_dir="simulationStatistics/statistics/simple"):
+def _plot_time_space_diagram(output_dir: str = "simulationStatistics/statistics/simple") -> None:
     if seed != "1":
         return
     # 保存先ディレクトリが存在しない場合は作成
@@ -502,7 +511,7 @@ def _plot_time_space_diagram(output_dir="simulationStatistics/statistics/simple"
         plt.close()
 
 
-def _get_options():
+def _get_options() -> optparse.Values:
     # define options for this script and interpret the command line
     optParser = optparse.OptionParser()
     optParser.add_option(
@@ -515,7 +524,7 @@ def _get_options():
     return options
 
 
-def _create_file_name():
+def _create_file_name() -> str:
     return f"simple_pass{inflow_pass}_exit{inflow_exit}_seed{seed}"
 
 
