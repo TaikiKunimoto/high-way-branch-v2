@@ -1,27 +1,37 @@
-[tool.poetry]
+[project]
 name = "high-way-branch"
 version = "0.1.0"
 description = "2024 Research"
-authors = ["TaikiKunimoto <taiki416avicii@gmail.com>"]
+authors = [{ name = "TaikiKunimoto", email = "taiki416avicii@gmail.com" }]
+requires-python = ">=3.13,<4"
 readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "traci>=1.21.0,<2",
+    "numpy>=2.1.3,<3",
+    "matplotlib>=3.9.2,<4",
+    "pandas>=2.2.3,<3",
+    "pydantic>=2.10.6,<3",
+]
 
-[tool.poetry.dependencies]
-python = "^3.10"
-traci = "^1.21.0"
-numpy = "^2.1.3"
-matplotlib = "^3.9.2"
-pandas = "^2.2.3"
-pydantic = "^2.10.6"
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0,<3",
+    "watchdog>=6.0.0,<7",
+    "ruff>=0.15.0,<0.16",
+    "pre-commit>=4.6.0,<5",
+]
 
-[tool.poetry.group.dev.dependencies]
-mypy = "^1.8.0"
-watchdog = "^4.0.1"
-ruff = "^0.8.1"
-pre-commit = "^4.1.0"
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[tool.uv]
+default-groups = "all"
+package = false
+# traci/sumolib は SUMO 本体とのバージョン整合のため 1.22 系に固定
+# （1.27 への引き上げは実機SUMOでの動作確認後に別途実施）
+constraint-dependencies = ["traci==1.22.*", "sumolib==1.22.*"]
 
 [tool.ruff]
 line-length = 119

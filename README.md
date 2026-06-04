@@ -1,8 +1,8 @@
 ## 環境構築
-poetryを利用して依存環境をインストールします．
-1. `curl -sSL https://install.python-poetry.org | python3 -`  
-2. `poetry lock`
-3. `poetry install --no-root`
+uv を利用して依存環境をインストールします．本プロジェクトは **Python 3.13** が必要です．
+1. uv をインストール：`curl -LsSf https://astral.sh/uv/install.sh | sh`  
+2. Python 3.13 を用意する（例：`uv python install 3.13`。リポジトリの `.python-version` で 3.13 を指定済み）  
+3. `uv sync`（仮想環境 `.venv` を Python 3.13 で作成し，依存をインストール）  
 4. `cmd + p` で workspace と検索し，`Open Workspace` をクリックしてワークスペース内で開発を行う
 
 ------------------------------
@@ -13,9 +13,9 @@ poetryを利用して依存環境をインストールします．
 
 1. `cd TraCI`  
 2. 実行したい手法に応じて以下のいずれかを実行します．  
-   - デフォルト手法（旧 `main.py`）： `poetry run python default.py 1 1700 1700`  
-   - シンプルな車線変更手法： `poetry run python simple.py 1 1700 1700`  
-   - カスタム手法： `poetry run python custom.py 1 1700 1700`
+   - デフォルト手法（旧 `main.py`）： `uv run python default.py 1 1700 1700`  
+   - シンプルな車線変更手法： `uv run python simple.py 1 1700 1700`  
+   - カスタム手法： `uv run python custom.py 1 1700 1700`
 
 ------------------------------
 

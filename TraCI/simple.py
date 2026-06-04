@@ -11,7 +11,6 @@ import sys
 
 from cav.simple_cav import SimpleCAV
 import matplotlib.pyplot as plt
-import numpy as np
 from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 
@@ -108,7 +107,7 @@ def run(inflow_pass, inflow_exit):
                 continue
 
             # 混雑でまだ道路に入れていない車両はcontinue
-            elif ins.id not in running_list:
+            if ins.id not in running_list:
                 # キャンセルリストに入っていない場合は追加
                 if ins.id not in canceled_vehicle:
                     canceled_vehicle.append(ins.id)
