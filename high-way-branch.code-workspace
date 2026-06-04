@@ -1,7 +1,7 @@
 {
   "folders": [
     {
-      "name": "high-way-branch",
+      "name": "high-way-branch-v2",
       "path": "."
     },
     {
@@ -29,7 +29,7 @@
       }
     },
     "ruff.enable": true,
-    "mypy-type-checker.args": ["--config-file=${workspaceFolder:high-way-branch}/pyproject.toml"],
+    "mypy-type-checker.args": ["--config-file=${workspaceFolder:high-way-branch-v2}/pyproject.toml"],
     "cSpell.words": [
       "sqlalchemy"
     ]

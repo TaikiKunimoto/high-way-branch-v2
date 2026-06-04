@@ -8,9 +8,14 @@ poetryを利用して依存環境をインストールします．
 ------------------------------
 
 ## 実行方法
-実行ファイル，乱数seed値, 交通量を指定しシミュレーションを実行します．
+実行ファイル，乱数seed値，交通量（流入数）を指定しシミュレーションを実行します．
+引数は順に `乱数seed値 inflow_pass inflow_exit` です．
+
 1. `cd TraCI`  
-2. `poetry run python main.py 1 1700 1700`
+2. 実行したい手法に応じて以下のいずれかを実行します．  
+   - デフォルト手法（旧 `main.py`）： `poetry run python default.py 1 1700 1700`  
+   - シンプルな車線変更手法： `poetry run python simple.py 1 1700 1700`  
+   - カスタム手法： `poetry run python custom.py 1 1700 1700`
 
 ------------------------------
 
