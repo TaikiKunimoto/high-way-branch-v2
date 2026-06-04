@@ -95,72 +95,72 @@ def run(inflow_pass: int, inflow_exit: int) -> None:
 
         for index, ins in enumerate(vehicle_instance):
             # シミュレーション範囲を出た車両をリスト化
-            if ins.id in arrived_list:
+            if ins.params.id in arrived_list:
                 poplist.append(index)
-                exit_vehicle.append(ins.id)
+                exit_vehicle.append(ins.params.id)
 
                 ins.get_arrival_time()
                 # 車輌の travel time と average speed を計算
-                if ins.route == "r_pass":
-                    if ins.departure_time is not None and ins.arrival_time is not None:
-                        stats.calculate_travel_time("r_pass", ins.departure_time, ins.arrival_time)
-                    stats.calculate_vehicle_average_speed("r_pass", ins.speed_history)
-                    r_pass_exit_vehicle.append(ins.id)
-                elif ins.route == "r_exit":
-                    if ins.departure_time is not None and ins.arrival_time is not None:
-                        stats.calculate_travel_time("r_exit", ins.departure_time, ins.arrival_time)
-                    stats.calculate_vehicle_average_speed("r_exit", ins.speed_history)
-                    r_exit_exit_vehicle.append(ins.id)
+                if ins.params.route == "r_pass":
+                    if ins.params.departure_time is not None and ins.params.arrival_time is not None:
+                        stats.calculate_travel_time("r_pass", ins.params.departure_time, ins.params.arrival_time)
+                    stats.calculate_vehicle_average_speed("r_pass", ins.params.speed_history)
+                    r_pass_exit_vehicle.append(ins.params.id)
+                elif ins.params.route == "r_exit":
+                    if ins.params.departure_time is not None and ins.params.arrival_time is not None:
+                        stats.calculate_travel_time("r_exit", ins.params.departure_time, ins.params.arrival_time)
+                    stats.calculate_vehicle_average_speed("r_exit", ins.params.speed_history)
+                    r_exit_exit_vehicle.append(ins.params.id)
                 continue
 
             # 混雑でまだ道路に入れていない車両はcontinue
-            if ins.id not in running_list:
+            if ins.params.id not in running_list:
                 # キャンセルリストに入っていない場合は追加
-                if ins.id not in canceled_vehicle:
-                    canceled_vehicle.append(ins.id)
+                if ins.params.id not in canceled_vehicle:
+                    canceled_vehicle.append(ins.params.id)
                 continue
 
             # シミュレーション範囲に入った車両をリスト化し、キャンセルリストから削除
-            if ins.id in departed_list:
+            if ins.params.id in departed_list:
                 ins.get_departure_time()
-                total_departed_vehicle.append(ins.id)
+                total_departed_vehicle.append(ins.params.id)
 
-                if ins.route == "r_pass":
-                    r_pass_departed_vehicle.append(ins.id)
-                elif ins.route == "r_exit":
-                    r_exit_departed_vehicle.append(ins.id)
+                if ins.params.route == "r_pass":
+                    r_pass_departed_vehicle.append(ins.params.id)
+                elif ins.params.route == "r_exit":
+                    r_exit_departed_vehicle.append(ins.params.id)
 
-                if ins.id in canceled_vehicle:
-                    canceled_vehicle.remove(ins.id)
+                if ins.params.id in canceled_vehicle:
+                    canceled_vehicle.remove(ins.params.id)
 
             # 自車両の情報（位置や速度）を更新
-            ins.updateStatus()
+            ins.update_status()
             # 自身の行動(Priority)を更新
-            ins.decideNextActionAndPriority()
+            ins.decide_next_action_and_priority()
             # 車線変更を実行
-            ins.executeLaneChange(
+            ins.execute_lane_change(
                 lane_change_history,
                 lane_2_congestion_tail_point,
                 lane_1_congestion_head_point,
             )
             # 車両の速度を更新
-            ins.controlSpeed()
+            ins.control_speed()
 
             # use in debug
-            # if ins.id == "0" or ins.id == "1" or ins.id == "2":
+            # if ins.params.id == "0" or ins.params.id == "1" or ins.params.id == "2":
             #     print(
-            #         f"Vehicle ID: {ins.id}, Route: {ins.route}, lane : {ins.laneID}, pos: {ins.pos_x} action: {ins.action}, priority: {ins.priority}, status: {ins.status}"
+            #         f"Vehicle ID: {ins.params.id}, Route: {ins.params.route}, lane : {ins.params.lane_id}, pos: {ins.params.pos_x} action: {ins.params.action}, priority: {ins.params.priority}, status: {ins.params.status}"
             #     )
 
             # Laneごとのキューから車両を削除
-            _updateLaneQueue(ins.id)
+            _updateLaneQueue(ins.params.id)
 
             # TTCを計算
-            if ins.leader_distance is not None and ins.leader_speed is not None:
-                stats.calculate_TTC(ins.leader_distance, ins.leader_speed, ins.speed)
+            if ins.params.leader_distance is not None and ins.params.leader_speed is not None:
+                stats.calculate_TTC(ins.params.leader_distance, ins.params.leader_speed, ins.params.speed)
 
-            if ins.laneID is not None and ins.lane_pos is not None:
-                _record_lane_data(ins.laneID, ins.lane_pos, ins.speed)
+            if ins.params.lane_id is not None and ins.params.lane_pos is not None:
+                _record_lane_data(ins.params.lane_id, ins.params.lane_pos, ins.params.speed)
 
         # 車両インスタンスを削除
         if poplist:
@@ -173,13 +173,13 @@ def run(inflow_pass: int, inflow_exit: int) -> None:
     # 環境に残っている車輌の平均速度も計算
     # 環境に残っている分流車輌の位置情報を記録（公平性計算のため）
     for ins in vehicle_instance:
-        if ins.id in running_list:
-            if ins.route == "r_pass":
-                stats.calculate_vehicle_average_speed("r_pass", ins.speed_history)
-            elif ins.route == "r_exit":
-                stats.calculate_vehicle_average_speed("r_exit", ins.speed_history)
-                if ins.pos_x is not None:
-                    r_exit_running_vehicle_dict[ins.id] = ins.pos_x
+        if ins.params.id in running_list:
+            if ins.params.route == "r_pass":
+                stats.calculate_vehicle_average_speed("r_pass", ins.params.speed_history)
+            elif ins.params.route == "r_exit":
+                stats.calculate_vehicle_average_speed("r_exit", ins.params.speed_history)
+                if ins.params.pos_x is not None:
+                    r_exit_running_vehicle_dict[ins.params.id] = ins.params.pos_x
 
     # sort by position
     r_exit_running_vehicle_dict = dict(sorted(r_exit_running_vehicle_dict.items(), key=lambda x: x[1], reverse=True))
