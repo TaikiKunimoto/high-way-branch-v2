@@ -19,7 +19,7 @@ from utils.traci_wrapper import get_sim_time
 import traci
 
 # 定数
-SIMULATION_TIME: float = 100.0  # シミュレーション時間[s]
+SIMULATION_TIME: float = 600.0  # シミュレーション時間[s]
 CONGESTION_SPEED: float = 11.1  # 渋滞判定速度 [m/s] (40 km/h)
 MIN_CONGESTED_VEHICLES: int = 5  # 渋滞とみなす最低車両数
 MAINLANE_LENGTH: float = 2500.0  # メインレーンの全長 [m]

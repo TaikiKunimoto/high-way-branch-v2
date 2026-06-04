@@ -19,7 +19,7 @@ from utils.traci_wrapper import (
 import traci
 
 # シミュレーションの総時間
-SIM_TIME: float = 100.0  # 5min
+SIM_TIME: float = 600.0  # 5min
 
 
 # シミュレーションに関する状態を保存するクラス
