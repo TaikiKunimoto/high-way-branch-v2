@@ -18,7 +18,7 @@ output_filename = "simple_tail_positions_3600_30.csv"
 output_filepath = os.path.join(current_dir, output_filename)
 
 # この辞書に { time値: [各seedのtail_position] } を貯める
-time_to_positions = {}
+time_to_positions: dict[float, dict[int, float]] = {}
 
 # 実際に読み込む CSV のリストを作る
 input_files = [f"{input_filename_base}{seed}.csv" for seed in seed_range]
@@ -69,7 +69,7 @@ with open(output_filepath, "w", encoding="utf-8", newline="") as f_out:
         avg_pos = sum(positions) / len(positions)
 
         # time, seed1,...,seed10, average の順に書き込み
-        row = [t] + positions + [avg_pos]
-        writer.writerow(row)
+        out_row = [t] + positions + [avg_pos]
+        writer.writerow(out_row)
 
 print(f"結合ファイルを出力しました: {output_filename}")
