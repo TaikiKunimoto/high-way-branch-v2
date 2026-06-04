@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr close:*)",
+      "Bash(gh api:*)",
+      "Bash(gh alias:*)"
+    ]
+  }
+}
