@@ -14,9 +14,8 @@ from cav.custom_cav import CustomCAV
 import matplotlib.pyplot as plt
 from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
-from utils.traci_wrapper import get_sim_time
-
 import traci
+from utils.traci_wrapper import get_sim_time
 
 # 定数
 SIMULATION_TIME: float = 600.0  # シミュレーション時間[s]

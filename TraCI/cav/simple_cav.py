@@ -9,7 +9,7 @@ if "SUMO_HOME" in os.environ:
     sys.path.append(tools)
 else:
     sys.exit("please declare environment variable 'SUMO_HOME'")
-import traci  # noqa
+import traci
 
 maxSpeed = 27  # [m/s]
 maxAccel = 10.0  # [m/ss]
@@ -115,8 +115,10 @@ class SimpleCAV:
                 "action": CarAction.CHANGE_RIGHT,
                 "priority": 0,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY
-                    or self.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
+                    lambda: (
+                        self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY
+                        or self.lane_change_status == LaneChangeStatus.ALL_ALLOWED
+                    ),
                     lambda: self._isPredictedSpeedIncrease("right"),
                 ],
             },
@@ -180,8 +182,10 @@ class SimpleCAV:
                 "action": CarAction.CHANGE_LEFT,
                 "priority": 0,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY
-                    or self.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
+                    lambda: (
+                        self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY
+                        or self.lane_change_status == LaneChangeStatus.ALL_ALLOWED
+                    ),
                     lambda: self._isPredictedSpeedIncrease("left"),
                 ],
             },
@@ -385,38 +389,35 @@ class SimpleCAV:
             return
 
         # 前方車両がいる場合
-        else:
-            speed_diff = self.speed - self.leader_speed
-            min_duration = self._calculateSafeDecelDuration(speed_diff)
-            ttc_with_safety_margin = self._calculateTTC(self.leader_distance, speed_diff)
-            # 前方車両との距離 > safety_gap の場合
-            if self.leader_distance >= self.safety_gap:
-                if speed_diff <= 0:
-                    self._controlSpeedBySpeedLimit(speed_limit)
-                    return
-                elif min_duration < ttc_with_safety_margin:
-                    self._controlSpeedBySpeedLimit(speed_limit)
-                    return
-                else:
-                    # 通常の減速
-                    duration = min(ttc_with_safety_margin, min_duration)
-                    traci.vehicle.slowDown(self.id, self.leader_speed, duration)
-                    return
+        speed_diff = self.speed - self.leader_speed
+        min_duration = self._calculateSafeDecelDuration(speed_diff)
+        ttc_with_safety_margin = self._calculateTTC(self.leader_distance, speed_diff)
+        # 前方車両との距離 > safety_gap の場合
+        if self.leader_distance >= self.safety_gap:
+            if speed_diff <= 0:
+                self._controlSpeedBySpeedLimit(speed_limit)
+                return
+            if min_duration < ttc_with_safety_margin:
+                self._controlSpeedBySpeedLimit(speed_limit)
+                return
+            # 通常の減速
+            duration = min(ttc_with_safety_margin, min_duration)
+            traci.vehicle.slowDown(self.id, self.leader_speed, duration)
+            return
 
-            # 前方車両との距離 < safety_gap の場合
+        # 前方車両との距離 < safety_gap の場合
+        if self.do_not_speed_up:
+            return
+        if speed_diff >= 0:
+            # 通常の減速
+            if self.leader_speed > 1:
+                target_speed = self.leader_speed - 1
             else:
-                if self.do_not_speed_up:
-                    return
-                if speed_diff >= 0:
-                    # 通常の減速
-                    if self.leader_speed > 1:
-                        target_speed = self.leader_speed - 1
-                    else:
-                        target_speed = 0
-                    duration = min(ttc_with_safety_margin, min_duration)
-                    traci.vehicle.slowDown(self.id, target_speed, duration)
-                else:
-                    return
+                target_speed = 0
+            duration = min(ttc_with_safety_margin, min_duration)
+            traci.vehicle.slowDown(self.id, target_speed, duration)
+        else:
+            return
 
     """ 車線変更を実行 """
 
@@ -584,12 +585,11 @@ class SimpleCAV:
             traci.vehicle.slowDown(self.id, speed_limit, safe_duration)
             return
         # 加速
-        else:
-            if self.do_not_speed_up:
-                return
-            safe_duration = self._calculateSafeAccelDuration(speed_limit - self.speed)
-            traci.vehicle.slowDown(self.id, speed_limit, safe_duration)
+        if self.do_not_speed_up:
             return
+        safe_duration = self._calculateSafeAccelDuration(speed_limit - self.speed)
+        traci.vehicle.slowDown(self.id, speed_limit, safe_duration)
+        return
 
     """ 最大減速で速度差を0にするために必要な時間を計算 """
 
