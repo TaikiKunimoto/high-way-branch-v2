@@ -42,7 +42,9 @@ class DefaultSimulationState:
         self.lane2_queue: list[str] = []
 
 
-def run(state: DefaultSimulationState, inflow_pass: int, inflow_exit: int, stats: SimulationStatistics, seed: str) -> None:
+def run(
+    state: DefaultSimulationState, inflow_pass: int, inflow_exit: int, stats: SimulationStatistics, seed: str
+) -> None:
     _set_environment(state, inflow_pass, inflow_exit)
 
     while _shouldContinueSimWithSimulationTime(state):
@@ -299,7 +301,7 @@ def _get_options() -> optparse.Values:
         default=False,
         help="run the commandline version of sumo",
     )
-    options, args = optParser.parse_args()
+    options, _ = optParser.parse_args()
     return options
 
 

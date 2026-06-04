@@ -126,10 +126,12 @@ class CustomCAV:
                 "action": CarAction.CHANGE_RIGHT,
                 "priority": 3,
                 "conditions": [
-                    lambda: self.params.lane_change_status
-                    in (
-                        LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
-                        LaneChangeStatus.ALL_ALLOWED,
+                    lambda: (
+                        self.params.lane_change_status
+                        in (
+                            LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
+                            LaneChangeStatus.ALL_ALLOWED,
+                        )
                     ),
                     lambda: self._is_predicted_speed_increase("right"),
                 ],
@@ -190,10 +192,12 @@ class CustomCAV:
                 "action": CarAction.CHANGE_LEFT,
                 "priority": 2,
                 "conditions": [
-                    lambda: self.params.lane_change_status
-                    in (
-                        LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
-                        LaneChangeStatus.ALL_ALLOWED,
+                    lambda: (
+                        self.params.lane_change_status
+                        in (
+                            LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
+                            LaneChangeStatus.ALL_ALLOWED,
+                        )
                     ),
                     lambda: self._is_predicted_speed_increase("left"),
                 ],
@@ -771,7 +775,7 @@ class CustomCAV:
         check_range = self.params.length + MIN_GAP
 
         # 同一ステップでの車線変更を考慮する
-        for changed_veh_id, changed_info in lane_change_history.items():
+        for _changed_veh_id, changed_info in lane_change_history.items():
             # 変更先レーンが同じかどうか確認
             if changed_info["lane"] == target_lane:
                 # レーン上のポジションを比較（ここでは lane_pos での比較例）

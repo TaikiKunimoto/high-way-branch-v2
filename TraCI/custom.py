@@ -398,7 +398,7 @@ def _plot_time_space_diagram(
     for lane, data in state.lane_data.items():
         if not data:
             continue
-        times, positions, speeds = zip(*data)
+        times, positions, speeds = zip(*data, strict=False)
         plt.figure(figsize=(12, 6))
         sc = plt.scatter(times, positions, c=speeds, cmap="jet_r", s=1)
         plt.colorbar(sc, label="Speed (m/s)")

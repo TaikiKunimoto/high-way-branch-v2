@@ -374,7 +374,7 @@ class SimpleCAV:
         # 協調フェーズの場合は加速は行わない
         if (
             self.status == CarStatus.YIELDING or self.status == CarStatus.LANE_CHANGING
-        ) and self.lane_change_pending == False:
+        ) and not self.lane_change_pending:
             self.do_not_speed_up = True
         else:
             self.do_not_speed_up = False
@@ -791,7 +791,7 @@ class SimpleCAV:
         check_range = self.length + minGap
 
         # 同一ステップでの車線変更を考慮する
-        for changed_veh_id, changed_info in lane_change_history.items():
+        for _changed_veh_id, changed_info in lane_change_history.items():
             # 変更先レーンが同じかどうか確認
             if changed_info["lane"] == target_lane:
                 # レーン上のポジションを比較（ここでは lane_pos での比較例）
