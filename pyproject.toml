@@ -77,7 +77,6 @@ files = ["TraCI"]
 namespace_packages = true
 explicit_package_bases = true
 strict = true
-report_missing_type_stubs = false
 
 [[tool.mypy.overrides]]
 module = [
