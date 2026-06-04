@@ -8,3 +8,4 @@ Claude Code の永続メモリ。このディレクトリは git 管理され、
 <!-- 1行1メモリ: - [Title](file.md) — hook -->
 
 - [main直push禁止](no-direct-push-to-main.md) — 変更は必ずブランチ→commit→PR
+- [uv移行の進捗](uv-migration-status.md) — poetry→uv済(PR#2)、pre-commit/ruff/mypy後始末が残存
