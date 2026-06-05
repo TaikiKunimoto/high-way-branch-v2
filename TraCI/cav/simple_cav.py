@@ -4,6 +4,22 @@ import sys
 from typing import Any, Dict, List, Optional, Tuple
 
 from status.status import CarAction, CarStatus, LaneChangeStatus
+from utils.traci_wrapper import (
+    get_lane_last_step_veh_ids,
+    get_lane_max_speed,
+    get_sim_time,
+    get_veh_acceleration,
+    get_veh_departure,
+    get_veh_lane_id,
+    get_veh_lane_index,
+    get_veh_lane_position,
+    get_veh_leader,
+    get_veh_pos,
+    get_veh_road_id,
+    get_veh_route_id,
+    get_veh_speed,
+    get_veh_type,
+)
 
 if "SUMO_HOME" in os.environ:
     tools = os.path.join(os.environ["SUMO_HOME"], "tools")
@@ -42,10 +58,10 @@ class SimpleCAV:
         traci.vehicle.setMinGap(self.id, 2.8)  # default 2.5
         traci.vehicle.setTau(self.id, 1.0)  # default 1.0
 
-        self.typeID: Optional[str] = traci.vehicle.getTypeID(self.id)
-        self.route: Optional[str] = traci.vehicle.getRouteID(self.id)
+        self.typeID: Optional[str] = get_veh_type(self.id)
+        self.route: Optional[str] = get_veh_route_id(self.id)
         self.road: Optional[str] = None
-        self.laneID: Optional[str] = traci.vehicle.getLaneID(self.id)
+        self.laneID: Optional[str] = get_veh_lane_id(self.id)
         self.lane: Optional[int] = None
         self.lane_change_status: LaneChangeStatus = LaneChangeStatus.SPEED_IMPROVEMENT_ONLY
         self.status: CarStatus = CarStatus.NORMAL
@@ -87,7 +103,7 @@ class SimpleCAV:
 
         self.lane_change_leader_speed: Optional[float] = None
 
-        self.simTime: float = traci.simulation.getTime()
+        self.simTime: float = get_sim_time()
 
         self.isWaitAgree: bool = False
 
@@ -195,34 +211,34 @@ class SimpleCAV:
     """ 車輌の実際の出発時刻を取得 """
 
     def get_departure_time(self) -> None:
-        self.departure_time = traci.vehicle.getDeparture(self.id)
+        self.departure_time = get_veh_departure(self.id)
 
     """ 車輌の実際の到着時刻を取得 """
 
     def get_arrival_time(self) -> None:
-        self.arrival_time = traci.simulation.getTime()
+        self.arrival_time = get_sim_time()
 
     """ 自身のステータスを更新 """
 
     def updateStatus(self) -> None:
-        self.simTime = traci.simulation.getTime()
+        self.simTime = get_sim_time()
 
         # update own position
-        pos = traci.vehicle.getPosition(self.id)
+        pos = get_veh_pos(self.id)
         self.pos_x = pos[0]
         self.pos_y = pos[1]
-        self.lane_pos = traci.vehicle.getLanePosition(self.id)
+        self.lane_pos = get_veh_lane_position(self.id)
 
         self.angle = traci.vehicle.getAngle(self.id)
-        self.speed = traci.vehicle.getSpeed(self.id)
+        self.speed = get_veh_speed(self.id)
         self.speed_history.append(self.speed)
-        self.accel = traci.vehicle.getAcceleration(self.id)
-        self.road = traci.vehicle.getRoadID(self.id)
-        self.lane = traci.vehicle.getLaneIndex(self.id)
-        self.laneID = traci.vehicle.getLaneID(self.id)
-        self.leader = traci.vehicle.getLeader(self.id, 0)
+        self.accel = get_veh_acceleration(self.id)
+        self.road = get_veh_road_id(self.id)
+        self.lane = get_veh_lane_index(self.id)
+        self.laneID = get_veh_lane_id(self.id)
+        self.leader = get_veh_leader(self.id, 0)
         self.leader_distance = self.leader[1] if self.leader is not None else None
-        self.leader_speed = traci.vehicle.getSpeed(self.leader[0]) if self.leader is not None else None
+        self.leader_speed = get_veh_speed(self.leader[0]) if self.leader is not None else None
 
         self._calculateSafetyGap()
 
@@ -391,7 +407,7 @@ class SimpleCAV:
 
         # 現在のレーンと制限速度を取得
         current_lane = f"{self.road}_{self.lane}"
-        speed_limit = traci.lane.getMaxSpeed(current_lane)
+        speed_limit = get_lane_max_speed(current_lane)
 
         # 前方車両がいない場合
         if self.leader is None:
@@ -543,7 +559,7 @@ class SimpleCAV:
 
         for direction, lane_num in check_lanes:
             lane_id = f"{self.road}_{lane_num}"
-            lane_vehicles = traci.lane.getLastStepVehicleIDs(lane_id)
+            lane_vehicles = get_lane_last_step_veh_ids(lane_id)
             if not lane_vehicles:
                 continue
 
@@ -554,7 +570,7 @@ class SimpleCAV:
                 if vehicle_id == self.id:
                     continue
 
-                vehicle_position = traci.vehicle.getLanePosition(vehicle_id)
+                vehicle_position = get_veh_lane_position(vehicle_id)
                 distance = abs(own_position - vehicle_position)
 
                 if vehicle_position < own_position:
@@ -673,7 +689,7 @@ class SimpleCAV:
         else:
             # 現在のレーンと制限速度を取得
             current_lane = f"{self.road}_{self.lane}"
-            speed_limit = traci.lane.getMaxSpeed(current_lane)
+            speed_limit = get_lane_max_speed(current_lane)
             self._controlSpeedBySpeedLimit(speed_limit)
 
         # 協調車両がいる場合は相手の速度も調整
@@ -840,12 +856,12 @@ class SimpleCAV:
                 return False
 
             opposite_lane = 2 if self.lane == 0 else 0
-            opposite_lane_vehicle_ids = traci.lane.getLastStepVehicleIDs(f"{self.road}_{opposite_lane}")
+            opposite_lane_vehicle_ids = get_lane_last_step_veh_ids(f"{self.road}_{opposite_lane}")
 
             for veh_id in opposite_lane_vehicle_ids:
                 if veh_id in vehicle_instances:
                     opposite_vehicle = vehicle_instances[veh_id]
-                    veh_pos = traci.vehicle.getLanePosition(veh_id)
+                    veh_pos = get_veh_lane_position(veh_id)
 
                     # 一つ挟んだ車線とのコリジョンが発生する場合には車線変更を許可しない
                     if abs(veh_pos - own_pos) < check_range and opposite_vehicle.action != CarAction.STAY:
@@ -914,7 +930,7 @@ class SimpleCAV:
             return True
 
         current_lane_leaders = self.current_lane_leaders if self.current_lane_leaders is not None else []
-        current_lane_leader_speeds = [traci.vehicle.getSpeed(leader[0]) for leader in current_lane_leaders]
+        current_lane_leader_speeds = [get_veh_speed(leader[0]) for leader in current_lane_leaders]
         if len(current_lane_leader_speeds) > 0:
             current_lane_avg_leader_speed = sum(current_lane_leader_speeds) / len(current_lane_leader_speeds)
         else:
@@ -922,7 +938,7 @@ class SimpleCAV:
         # 自分自身の速度と走行中の車線の平均速度の大きい方を取得
         baseline_speed = max(self.speed, current_lane_avg_leader_speed)
 
-        target_lane_leader_speeds = [traci.vehicle.getSpeed(leader[0]) for leader in target_lane_leaders]
+        target_lane_leader_speeds = [get_veh_speed(leader[0]) for leader in target_lane_leaders]
         target_lane_avg_leader_speed = sum(target_lane_leader_speeds) / len(target_lane_leader_speeds)
 
         return bool(target_lane_avg_leader_speed > baseline_speed * (1 + SPEED_IMPROVEMENT_THRESHOLD / 100))
