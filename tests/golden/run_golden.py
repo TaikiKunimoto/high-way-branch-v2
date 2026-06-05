@@ -109,26 +109,24 @@ def run_one(method: str, seed: str, p: int, e: int, env: dict[str, str]) -> tupl
     return proc.stdout, dur
 
 
-def artifacts_for(method: str, seed: str, p: int, e: int, stdout: str) -> dict[str, object]:
-    return {
-        "stdout.txt": normalize_stdout(stdout),
-        "result.csv": result_csv(method),
-        "tail.csv": tail_csv(method, seed, p, e),
-    }
+Matrix = list[tuple[str, str, int, int]]
 
 
-def do_record(matrix, env) -> int:
+def artifacts_for(method: str, seed: str, p: int, e: int, stdout: str) -> tuple[str, Path | None, Path | None]:
+    return normalize_stdout(stdout), result_csv(method), tail_csv(method, seed, p, e)
+
+
+def do_record(matrix: Matrix, env: dict[str, str]) -> int:
     SNAP_DIR.mkdir(parents=True, exist_ok=True)
     for method, seed, p, e in matrix:
         stdout, dur = run_one(method, seed, p, e, env)
-        art = artifacts_for(method, seed, p, e, stdout)
+        out_norm, res, tail = artifacts_for(method, seed, p, e, stdout)
         d = SNAP_DIR / key(method, seed, p, e)
         if d.exists():
             shutil.rmtree(d)
         d.mkdir(parents=True)
-        (d / "stdout.txt").write_text(art["stdout.txt"])
-        for name in ("result.csv", "tail.csv"):
-            src = art[name]
+        (d / "stdout.txt").write_text(out_norm)
+        for name, src in (("result.csv", res), ("tail.csv", tail)):
             if src:
                 shutil.copyfile(src, d / name)
         print(f"  recorded {key(method, seed, p, e)}  ({dur:.0f}s)")
@@ -136,7 +134,7 @@ def do_record(matrix, env) -> int:
     return 0
 
 
-def do_check(matrix, env) -> int:
+def do_check(matrix: Matrix, env: dict[str, str]) -> int:
     failed = False
     for method, seed, p, e in matrix:
         d = SNAP_DIR / key(method, seed, p, e)
@@ -144,20 +142,19 @@ def do_check(matrix, env) -> int:
             print(f"  SKIP {key(method, seed, p, e)} (no snapshot — run record first)")
             continue
         stdout, dur = run_one(method, seed, p, e, env)
-        art = artifacts_for(method, seed, p, e, stdout)
+        out_norm, res, tail = artifacts_for(method, seed, p, e, stdout)
         problems = []
         # ハード判定: CSV
-        for name in ("result.csv", "tail.csv"):
+        for name, cur in (("result.csv", res), ("tail.csv", tail)):
             golden = d / name
-            cur = art[name]
             if golden.exists() and cur:
-                if golden.read_bytes() != Path(cur).read_bytes():
+                if golden.read_bytes() != cur.read_bytes():
                     problems.append(f"FAIL {name} differs")
             elif golden.exists() != bool(cur):
                 problems.append(f"FAIL {name} presence mismatch")
         # ソフト判定: stdout
         gold_out = d / "stdout.txt"
-        if gold_out.exists() and gold_out.read_text() != art["stdout.txt"]:
+        if gold_out.exists() and gold_out.read_text() != out_norm:
             problems.append("WARN stdout differs (informational)")
         status = "OK" if not any(x.startswith("FAIL") for x in problems) else "FAIL"
         if status == "FAIL":
