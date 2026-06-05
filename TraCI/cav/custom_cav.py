@@ -111,7 +111,7 @@ class CustomCAV:
         traci.vehicle.setTau(self.params.id, 1.0)
 
         # 車線変更ルールテーブルの初期化
-        self.lane_change_rules: Dict[Tuple[Optional[int], Optional[str]], Dict[str, Any]] = {
+        self.lane_change_rules: Dict[Tuple[int, str], Dict[str, Any]] = {
             # Lane 2 のルール
             (2, "speed"): {
                 "action": CarAction.CHANGE_RIGHT,
@@ -336,7 +336,7 @@ class CustomCAV:
 
         if self.params.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
             # TODO
-            rule = self.lane_change_rules.get(speed_key) if speed_key is not None else None
+            rule = self.lane_change_rules.get(speed_key)
         else:
             # TODO
             rule = self.lane_change_rules.get(base_key)
