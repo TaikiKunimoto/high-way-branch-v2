@@ -9,7 +9,7 @@ import sys
 
 from cav.default_cav import DefaultCAV
 from simulationStatistics.simulation_statistics import SimulationStatistics
-from sumolib import checkBinary
+from sumolib import checkBinary  # type: ignore
 from utils.traci_wrapper import (
     get_sim_arrived_veh_id_list,
     get_sim_departed_veh_id_list,

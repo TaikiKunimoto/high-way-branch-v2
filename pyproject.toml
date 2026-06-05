@@ -71,18 +71,14 @@ force-sort-within-sections = true
 force-wrap-aliases = true
 
 [tool.mypy]
-# TraCI/ をパッケージルートとして解決（cav, utils, status などを top-level import 可能に）
-mypy_path = "TraCI"
-files = ["TraCI"]
 namespace_packages = true
 explicit_package_bases = true
 strict = true
+report_missing_type_stubs = false
 
 [[tool.mypy.overrides]]
 module = [
   "traci",
   "pandas",
-  "sumolib",
-  "matplotlib.*",
 ]
 ignore_missing_imports = true
