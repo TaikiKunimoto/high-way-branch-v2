@@ -3,6 +3,19 @@ import os
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
+from pydantic import BaseModel
+
+from cav.constants import (
+    FRICTION_COEFFICIENT,
+    LANE_CHANGE_MARGIN_DEFAULT,
+    MAINLANE_LENGTH,
+    MAX_ACCEL,
+    MAX_DECEL,
+    MAX_SPEED,
+    MIN_GAP,
+    REACTION_TIME,
+    SPEED_IMPROVEMENT_THRESHOLD,
+)
 from status.status import CarAction, CarStatus, LaneChangeStatus
 from utils.traci_wrapper import (
     get_lane_last_step_veh_ids,
@@ -28,93 +41,81 @@ else:
     sys.exit("please declare environment variable 'SUMO_HOME'")
 import traci
 
-maxSpeed = 27  # [m/s]
-maxAccel = 10.0  # [m/ss]
-maxDecel = -5.0  # [m/ss]
-minGap = 2.8  # [m]
-reactionTime = 0.75  # [s]
-frictionCoefficient = 0.7  # 摩擦係数
-LANE_WIDTH = 3.2  # [m]
-LANE_CHANGE_MARGIN_DEFAULT = 400.0  # [m] 分岐地点の何メートル手前から車線変更を許可するか
+# 手法固有の定数（共通定数は cav.constants からimport）
 LANE_CHANGE_MARGIN_CONGESTED = 120.0  # [m] Lane2が混雑している際に分岐地点の何m手前から車線変更を許可するか
-SPEED_IMPROVEMENT_THRESHOLD = 40.0  # 車線変更による速度改善の閾値 [%]
-MAINLANE_LENGTH = 2500  # [m]
-
-timeStep = 0.1  # [s]
 
 vehicle_instances: Dict[str, "SimpleCAV"] = {}  # グローバルな車輌管理辞書
 
 
+class SimpleCAVParams(BaseModel):
+    id: str
+    type_id: Optional[str] = None
+    route: Optional[str] = None
+    road: Optional[str] = None
+    lane_id: Optional[str] = None
+    lane: Optional[int] = None
+    lane_change_status: LaneChangeStatus = LaneChangeStatus.SPEED_IMPROVEMENT_ONLY
+    status: CarStatus = CarStatus.NORMAL
+    action: CarAction = CarAction.STAY
+    priority: int = 0
+    lane_change_pending: bool = False
+    last_lane_change_time: Optional[float] = None
+    receiving_cooperative_from_id: Optional[str] = None
+    providing_cooperative_to_id: Optional[str] = None
+    leader_distance: Optional[float] = None
+    leader_speed: Optional[float] = None
+    current_lane_leaders: Optional[List[Tuple[str, float]]] = None
+    current_lane_followers: Optional[List[Tuple[str, float]]] = None
+    left_followers: Optional[List[Tuple[str, float]]] = None
+    right_followers: Optional[List[Tuple[str, float]]] = None
+    left_leaders: Optional[List[Tuple[str, float]]] = None
+    right_leaders: Optional[List[Tuple[str, float]]] = None
+    lane_pos: Optional[float] = None
+    pos_x: Optional[float] = None
+    pos_y: Optional[float] = None
+    angle: Optional[float] = None
+    speed: float = 0
+    accel: float = 0
+    leader: Optional[Tuple[str, float]] = None
+    length: float = 5.0
+    width: float = 1.8
+    reaction_distance: float = 0
+    breaking_distance: float = 0
+    safety_gap: float = MIN_GAP
+    do_not_speed_up: bool = False
+    required_distance_from_leader: Optional[float] = None
+    current_distance_from_leader: Optional[float] = None
+    required_distance_from_follower: Optional[float] = None
+    current_distance_from_follower: Optional[float] = None
+    lane_change_leader_speed: Optional[float] = None
+    sim_time: float = 0.0
+    is_wait_agree: bool = False
+    collision_counter: int = 0
+    caution_counter: int = 0
+    emergency_brake_counter: int = 0
+    departure_time: Optional[float] = None
+    arrival_time: Optional[float] = None
+    speed_history: List[float] = []
+
+
 class SimpleCAV:
     # constructor
-    def __init__(self, vehID: int) -> None:
-        self.id: str = str(vehID)
-        vehicle_instances[self.id] = self
+    def __init__(self, veh_id: int) -> None:
+        self.params = SimpleCAVParams(
+            id=str(veh_id),
+            type_id=get_veh_type(str(veh_id)),
+            route=get_veh_route_id(str(veh_id)),
+            lane_id=get_veh_lane_id(str(veh_id)),
+            sim_time=get_sim_time(),
+        )
+        vehicle_instances[self.params.id] = self
 
         # sumoによる車線変更を無効化
-        traci.vehicle.setLaneChangeMode(vehID=self.id, laneChangeMode=0)
+        traci.vehicle.setLaneChangeMode(vehID=self.params.id, laneChangeMode=0)
         # control vehicle speed by traci
-        traci.vehicle.setSpeedMode(vehID=self.id, speedMode=0)
-        traci.vehicle.setMinGap(self.id, 2.8)  # default 2.5
-        traci.vehicle.setTau(self.id, 1.0)  # default 1.0
-
-        self.typeID: Optional[str] = get_veh_type(self.id)
-        self.route: Optional[str] = get_veh_route_id(self.id)
-        self.road: Optional[str] = None
-        self.laneID: Optional[str] = get_veh_lane_id(self.id)
-        self.lane: Optional[int] = None
-        self.lane_change_status: LaneChangeStatus = LaneChangeStatus.SPEED_IMPROVEMENT_ONLY
-        self.status: CarStatus = CarStatus.NORMAL
-        self.action: CarAction = CarAction.STAY
-        self.priority: int = 0  # 0(normal), 1(emergency)
-        self.lane_change_pending: bool = False
-        self.last_lane_change_time: Optional[float] = None  # Sumo Time
-        self.receiving_cooperative_from_id: Optional[str] = None  # 協調中に譲ってもらう車両のID
-        self.providing_cooperative_to_id: Optional[str] = None  # 協調して譲る車両のID
-        self.leader_distance: Optional[float] = None  # 前方車両との距離
-        self.leader_speed: Optional[float] = None  # 前方車両の速度
-        self.current_lane_leaders: Optional[List[Tuple[str, float]]] = None  # 現在のレーンの前方車両
-        self.current_lane_followers: Optional[List[Tuple[str, float]]] = None
-        self.left_followers: Optional[List[Tuple[str, float]]] = None  # 左後続車両
-        self.right_followers: Optional[List[Tuple[str, float]]] = None  # 右後続車両
-        self.left_leaders: Optional[List[Tuple[str, float]]] = None  # 左前方車両
-        self.right_leaders: Optional[List[Tuple[str, float]]] = None  # 右前方車両
-
-        self.lane_pos: Optional[float] = None
-        self.pos_x: Optional[float] = None
-        self.pos_y: Optional[float] = None
-        self.angle: Optional[float] = None
-        self.speed: float = 0
-        self.accel: float = 0
-        self.leader: Optional[Tuple[str, float]] = None
-        self.length: float = 5.0
-        self.width: float = 1.8
-        self.reaction_distance: float = 0  # 空走距離 [m]
-        self.breaking_distance: float = 0  # 制動距離 [m]
-        self.safety_gap: float = self.reaction_distance + self.breaking_distance + minGap
-        self.do_not_speed_up: bool = False
-
-        # [m] 車線変更の目的車線にいる前方車両との安全距離
-        self.required_distance_from_leader: Optional[float] = None
-        self.current_distance_from_leader: Optional[float] = None
-        # [m] 車線変更の目的車線にいる後方車両との安全距離
-        self.required_distance_from_follower: Optional[float] = None
-        self.current_distance_from_follower: Optional[float] = None
-
-        self.lane_change_leader_speed: Optional[float] = None
-
-        self.simTime: float = get_sim_time()
-
-        self.isWaitAgree: bool = False
-
-        self.collision_counter: int = 0
-        self.caution_counter: int = 0
-        self.emergency_brake_counter: int = 0
-
-        self.departure_time: Optional[float] = None
-        self.arrival_time: Optional[float] = None
-
-        self.speed_history: List[float] = []
+        traci.vehicle.setSpeedMode(vehID=self.params.id, speedMode=0)
+        traci.vehicle.setMinGap(self.params.id, 2.8)  # default 2.5
+        traci.vehicle.setTau(self.params.id, 1.0)  # default 1.0
 
         """ 車線変更ルールテーブルの初期化 """
         self.lane_change_rules: Dict[Tuple[Optional[int], Optional[str]], Dict[str, Any]] = {
@@ -123,8 +124,8 @@ class SimpleCAV:
                 "action": CarAction.CHANGE_RIGHT,
                 "priority": 0,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
-                    lambda: self._isPredictedSpeedIncrease("right"),
+                    lambda: self.params.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
+                    lambda: self._is_predicted_speed_increase("right"),
                 ],
             },
             (2, "r_exit"): {"action": CarAction.STAY, "priority": 0, "conditions": []},
@@ -133,10 +134,10 @@ class SimpleCAV:
                 "priority": 0,
                 "conditions": [
                     lambda: (
-                        self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY
-                        or self.lane_change_status == LaneChangeStatus.ALL_ALLOWED
+                        self.params.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY
+                        or self.params.lane_change_status == LaneChangeStatus.ALL_ALLOWED
                     ),
-                    lambda: self._isPredictedSpeedIncrease("right"),
+                    lambda: self._is_predicted_speed_increase("right"),
                 ],
             },
             # Lane 1のルール
@@ -144,39 +145,39 @@ class SimpleCAV:
                 "action": CarAction.CHANGE_LEFT,
                 "priority": 0,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
-                    lambda: self._isPredictedSpeedIncrease("left"),
+                    lambda: self.params.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
+                    lambda: self._is_predicted_speed_increase("left"),
                 ],
             },
             (1, "speed_right"): {
                 "action": CarAction.CHANGE_RIGHT,
                 "priority": 0,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
-                    lambda: self._isPredictedSpeedIncrease("right"),
+                    lambda: self.params.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
+                    lambda: self._is_predicted_speed_increase("right"),
                 ],
             },
             (1, "r_exit"): {
                 "action": CarAction.CHANGE_LEFT,
                 "priority": 0,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
+                    lambda: self.params.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
                 ],
             },
             (1, "r_pass_left"): {
                 "action": CarAction.CHANGE_LEFT,
                 "priority": 0,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
-                    lambda: self._isPredictedSpeedIncrease("left"),
+                    lambda: self.params.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
+                    lambda: self._is_predicted_speed_increase("left"),
                 ],
             },
             (1, "r_pass_right"): {
                 "action": CarAction.CHANGE_RIGHT,
                 "priority": 0,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
-                    lambda: self._isPredictedSpeedIncrease("right"),
+                    lambda: self.params.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
+                    lambda: self._is_predicted_speed_increase("right"),
                 ],
             },
             # Lane 0のルール
@@ -184,15 +185,15 @@ class SimpleCAV:
                 "action": CarAction.CHANGE_LEFT,
                 "priority": 0,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
-                    lambda: self._isPredictedSpeedIncrease("left"),
+                    lambda: self.params.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY,
+                    lambda: self._is_predicted_speed_increase("left"),
                 ],
             },
             (0, "r_exit"): {
                 "action": CarAction.CHANGE_LEFT,
                 "priority": 0,
                 "conditions": [
-                    lambda: self.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
+                    lambda: self.params.lane_change_status == LaneChangeStatus.ALL_ALLOWED,
                 ],
             },
             (0, "r_pass"): {
@@ -200,10 +201,10 @@ class SimpleCAV:
                 "priority": 0,
                 "conditions": [
                     lambda: (
-                        self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY
-                        or self.lane_change_status == LaneChangeStatus.ALL_ALLOWED
+                        self.params.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY
+                        or self.params.lane_change_status == LaneChangeStatus.ALL_ALLOWED
                     ),
-                    lambda: self._isPredictedSpeedIncrease("left"),
+                    lambda: self._is_predicted_speed_increase("left"),
                 ],
             },
         }
@@ -211,354 +212,354 @@ class SimpleCAV:
     """ 車輌の実際の出発時刻を取得 """
 
     def get_departure_time(self) -> None:
-        self.departure_time = get_veh_departure(self.id)
+        self.params.departure_time = get_veh_departure(self.params.id)
 
     """ 車輌の実際の到着時刻を取得 """
 
     def get_arrival_time(self) -> None:
-        self.arrival_time = get_sim_time()
+        self.params.arrival_time = get_sim_time()
 
     """ 自身のステータスを更新 """
 
-    def updateStatus(self) -> None:
-        self.simTime = get_sim_time()
+    def update_status(self) -> None:
+        self.params.sim_time = get_sim_time()
 
         # update own position
-        pos = get_veh_pos(self.id)
-        self.pos_x = pos[0]
-        self.pos_y = pos[1]
-        self.lane_pos = get_veh_lane_position(self.id)
+        pos = get_veh_pos(self.params.id)
+        self.params.pos_x = pos[0]
+        self.params.pos_y = pos[1]
+        self.params.lane_pos = get_veh_lane_position(self.params.id)
 
-        self.angle = traci.vehicle.getAngle(self.id)
-        self.speed = get_veh_speed(self.id)
-        self.speed_history.append(self.speed)
-        self.accel = get_veh_acceleration(self.id)
-        self.road = get_veh_road_id(self.id)
-        self.lane = get_veh_lane_index(self.id)
-        self.laneID = get_veh_lane_id(self.id)
-        self.leader = get_veh_leader(self.id, 0)
-        self.leader_distance = self.leader[1] if self.leader is not None else None
-        self.leader_speed = get_veh_speed(self.leader[0]) if self.leader is not None else None
+        self.params.angle = traci.vehicle.getAngle(self.params.id)
+        self.params.speed = get_veh_speed(self.params.id)
+        self.params.speed_history.append(self.params.speed)
+        self.params.accel = get_veh_acceleration(self.params.id)
+        self.params.road = get_veh_road_id(self.params.id)
+        self.params.lane = get_veh_lane_index(self.params.id)
+        self.params.lane_id = get_veh_lane_id(self.params.id)
+        self.params.leader = get_veh_leader(self.params.id, 0)
+        self.params.leader_distance = self.params.leader[1] if self.params.leader is not None else None
+        self.params.leader_speed = get_veh_speed(self.params.leader[0]) if self.params.leader is not None else None
 
-        self._calculateSafetyGap()
+        self._calculate_safety_gap()
 
         # 分流車両の車線変更が間に合わない場合優先度を最大にする
         # 分岐地点のLANE_CHANGE_MARGIN_CONGESTED手前で車線変更できていない場合は優先度を最大にする
         if (
-            self.road == "MainLane1"
-            and self.lane_pos is not None
-            and self.lane_pos > MAINLANE_LENGTH - LANE_CHANGE_MARGIN_CONGESTED
+            self.params.road == "MainLane1"
+            and self.params.lane_pos is not None
+            and self.params.lane_pos > MAINLANE_LENGTH - LANE_CHANGE_MARGIN_CONGESTED
         ):
-            if self.route == "r_exit" and self.lane != 2:
-                self.action = CarAction.CHANGE_LEFT
-                self.status = CarStatus.LANE_CHANGING
-                self.priority = 1
+            if self.params.route == "r_exit" and self.params.lane != 2:
+                self.params.action = CarAction.CHANGE_LEFT
+                self.params.status = CarStatus.LANE_CHANGING
+                self.params.priority = 1
 
-        if self.road != "MainLane1" and self.status != CarStatus.NORMAL:
-            self._resetLaneChangeState()
+        if self.params.road != "MainLane1" and self.params.status != CarStatus.NORMAL:
+            self._reset_lane_change_state()
 
         # 車線変更が可能なポイントを通過したら車線変更を可能にする
-        if self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
-            if self._hasPassedLaneChangePoint():
-                self.lane_change_status = LaneChangeStatus.ALL_ALLOWED
+        if self.params.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
+            if self._has_passed_lane_change_point():
+                self.params.lane_change_status = LaneChangeStatus.ALL_ALLOWED
                 # 協調車線変更が可能になったタイミングで行動を初期化, 協調中であればそのステータスは維持
-                self._resetLaneChangeStateKeepYielding()
+                self._reset_lane_change_state_keep_yielding()
 
-        if self.lane_change_status == LaneChangeStatus.ALL_ALLOWED:
-            if self.road != "MainLane1" and self.priority != 1:
+        if self.params.lane_change_status == LaneChangeStatus.ALL_ALLOWED:
+            if self.params.road != "MainLane1" and self.params.priority != 1:
                 # 車線変更は禁止するが協調中のステータスは維持, 優先度が1の場合は車線変更可能
-                self.lane_change_status = LaneChangeStatus.UNAVAILABLE
-                self._resetLaneChangeStateKeepYielding()
+                self.params.lane_change_status = LaneChangeStatus.UNAVAILABLE
+                self._reset_lane_change_state_keep_yielding()
 
-        self._getFollowerAndLeader()
+        self._get_follower_and_leader()
 
         # 車線変更が可能かを判断するリストをリセット
-        self.current_distance_from_follower = None
-        self.required_distance_from_follower = None
-        self.current_distance_from_leader = None
-        self.required_distance_from_leader = None
-        self.lane_change_leader_speed = None
-        self.do_not_speed_up = False
+        self.params.current_distance_from_follower = None
+        self.params.required_distance_from_follower = None
+        self.params.current_distance_from_leader = None
+        self.params.required_distance_from_leader = None
+        self.params.lane_change_leader_speed = None
+        self.params.do_not_speed_up = False
 
         # debug 協調車両同士が正しく設定されているか確認
         # TODO この関数入れるだけでめっちゃ重くなるから消したい
-        if self.providing_cooperative_to_id is not None:
-            if self.providing_cooperative_to_id in vehicle_instances:
-                supporting_vehicle = vehicle_instances[self.providing_cooperative_to_id]
+        if self.params.providing_cooperative_to_id is not None:
+            if self.params.providing_cooperative_to_id in vehicle_instances:
+                supporting_vehicle = vehicle_instances[self.params.providing_cooperative_to_id]
 
                 # 協調車両同士が同じレーンにいる場合は協調関係を解除
-                if self.lane == supporting_vehicle.lane:
+                if self.params.lane == supporting_vehicle.params.lane:
                     print(
-                        f"Warning: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but they are in the same lane"
+                        f"Warning: {self.params.id} is providing cooperation to {self.params.providing_cooperative_to_id} but they are in the same lane"
                     )
-                    supporting_vehicle._resetLaneChangeState()
+                    supporting_vehicle._reset_lane_change_state()
 
                 # 協調車両同士の車線変更先が正しいか確認
-                if supporting_vehicle.action == CarAction.CHANGE_LEFT:
-                    if supporting_vehicle.lane != self.lane - 1:
+                if supporting_vehicle.params.action == CarAction.CHANGE_LEFT:
+                    if supporting_vehicle.params.lane != self.params.lane - 1:
                         print(
-                            f"Warning: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but the target lane is not correct"
+                            f"Warning: {self.params.id} is providing cooperation to {self.params.providing_cooperative_to_id} but the target lane is not correct"
                         )
-                        supporting_vehicle._resetLaneChangeState()
-                elif supporting_vehicle.action == CarAction.CHANGE_RIGHT:
-                    if supporting_vehicle.lane != self.lane + 1:
+                        supporting_vehicle._reset_lane_change_state()
+                elif supporting_vehicle.params.action == CarAction.CHANGE_RIGHT:
+                    if supporting_vehicle.params.lane != self.params.lane + 1:
                         print(
-                            f"Warning: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but the target lane is not correct"
+                            f"Warning: {self.params.id} is providing cooperation to {self.params.providing_cooperative_to_id} but the target lane is not correct"
                         )
-                        supporting_vehicle._resetLaneChangeState()
+                        supporting_vehicle._reset_lane_change_state()
 
                 # use in debug
-                if self.id != supporting_vehicle.receiving_cooperative_from_id:
+                if self.params.id != supporting_vehicle.params.receiving_cooperative_from_id:
                     print(
-                        f"Warning: {self.id} is providing cooperation to {self.providing_cooperative_to_id} but receiving cooperation from {supporting_vehicle.receiving_cooperative_from_id}"
+                        f"Warning: {self.params.id} is providing cooperation to {self.params.providing_cooperative_to_id} but receiving cooperation from {supporting_vehicle.params.receiving_cooperative_from_id}"
                     )
 
     """ 自身の行動（priority） を決定 """
 
-    def decideNextActionAndPriority(self) -> None:
+    def decide_next_action_and_priority(self) -> None:
         # 無効な道路上の場合は何もしない
-        if self.road != "MainLane1":
-            self.action = CarAction.STAY
-            self.priority = 0
+        if self.params.road != "MainLane1":
+            self.params.action = CarAction.STAY
+            self.params.priority = 0
 
         # 車線変更中の場合は行動を継続
-        if self.lane_change_status == LaneChangeStatus.ALL_ALLOWED and (
-            self.status == CarStatus.LANE_CHANGING or self.status == CarStatus.YIELDING
+        if self.params.lane_change_status == LaneChangeStatus.ALL_ALLOWED and (
+            self.params.status == CarStatus.LANE_CHANGING or self.params.status == CarStatus.YIELDING
         ):
             return
 
-        base_key: Tuple[Optional[int], Optional[str]] = (self.lane, self.route)
+        base_key: Tuple[Optional[int], Optional[str]] = (self.params.lane, self.params.route)
         speed_key: Optional[Tuple[Optional[int], Optional[str]]] = None
         # 現在のレーンと経路に基づくルールを取得
-        if self.lane != 1:
-            base_key = (self.lane, self.route)
-            speed_key = (self.lane, "speed")
+        if self.params.lane != 1:
+            base_key = (self.params.lane, self.params.route)
+            speed_key = (self.params.lane, "speed")
         else:
-            if self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
-                base_key = (self.lane, self.route)
-                if self._isPredictedSpeedIncrease("left"):
-                    speed_key = (self.lane, "speed_left")
-                elif self._isPredictedSpeedIncrease("right"):
-                    speed_key = (self.lane, "speed_right")
+            if self.params.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
+                base_key = (self.params.lane, self.params.route)
+                if self._is_predicted_speed_increase("left"):
+                    speed_key = (self.params.lane, "speed_left")
+                elif self._is_predicted_speed_increase("right"):
+                    speed_key = (self.params.lane, "speed_right")
                 else:
                     speed_key = None
             else:
                 speed_key = None
-                if self.route == "r_exit":
-                    base_key = (self.lane, self.route)
+                if self.params.route == "r_exit":
+                    base_key = (self.params.lane, self.params.route)
                 else:
-                    if self._isPredictedSpeedIncrease("left"):
-                        if self.route is not None:
-                            base_key = (self.lane, self.route + "_left")
-                    elif self._isPredictedSpeedIncrease("right"):
-                        if self.route is not None:
-                            base_key = (self.lane, self.route + "_right")
+                    if self._is_predicted_speed_increase("left"):
+                        if self.params.route is not None:
+                            base_key = (self.params.lane, self.params.route + "_left")
+                    elif self._is_predicted_speed_increase("right"):
+                        if self.params.route is not None:
+                            base_key = (self.params.lane, self.params.route + "_right")
                     else:
-                        base_key = (self.lane, self.route)
+                        base_key = (self.params.lane, self.params.route)
 
-        if self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
+        if self.params.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
             rule = self.lane_change_rules.get(speed_key) if speed_key is not None else None
         else:
             rule = self.lane_change_rules.get(base_key)
 
         if not rule:
-            self.action = CarAction.STAY
-            self.priority = 0
-            self.status = CarStatus.NORMAL
+            self.params.action = CarAction.STAY
+            self.params.priority = 0
+            self.params.status = CarStatus.NORMAL
             return
 
         # 条件を満たすか確認
         if all(condition() for condition in rule["conditions"]):
-            self.action = rule["action"]
-            self.priority = rule["priority"]
+            self.params.action = rule["action"]
+            self.params.priority = rule["priority"]
         else:
-            self.action = CarAction.STAY
-            self.priority = 0
+            self.params.action = CarAction.STAY
+            self.params.priority = 0
 
-        if self.action != CarAction.STAY:
-            self.status = CarStatus.LANE_CHANGING
+        if self.params.action != CarAction.STAY:
+            self.params.status = CarStatus.LANE_CHANGING
         else:
-            self.status = CarStatus.NORMAL
+            self.params.status = CarStatus.NORMAL
 
         # 連続して車線変更を行わないための制御
         # 車輌の優先度を付与した後にそれを容認するかどうかを判断する
-        if self.last_lane_change_time is not None and self.priority != 1:
-            if self.simTime - self.last_lane_change_time < 5:
-                self.action = CarAction.STAY
-                self.priority = 0
-                self.status = CarStatus.NORMAL
+        if self.params.last_lane_change_time is not None and self.params.priority != 1:
+            if self.params.sim_time - self.params.last_lane_change_time < 5:
+                self.params.action = CarAction.STAY
+                self.params.priority = 0
+                self.params.status = CarStatus.NORMAL
                 return
 
     """ 車両の速度を調整 """
 
-    def controlSpeed(self) -> None:
-        if self.leader_distance is not None and self.leader_distance < minGap:
-            if self.leader_speed is not None:
-                self._emergencyBreak(self.leader_speed)
+    def control_speed(self) -> None:
+        if self.params.leader_distance is not None and self.params.leader_distance < MIN_GAP:
+            if self.params.leader_speed is not None:
+                self._emergency_break(self.params.leader_speed)
             return
 
         # 協調フェーズの場合は加速は行わない
         if (
-            self.status == CarStatus.YIELDING or self.status == CarStatus.LANE_CHANGING
-        ) and not self.lane_change_pending:
-            self.do_not_speed_up = True
+            self.params.status == CarStatus.YIELDING or self.params.status == CarStatus.LANE_CHANGING
+        ) and not self.params.lane_change_pending:
+            self.params.do_not_speed_up = True
         else:
-            self.do_not_speed_up = False
+            self.params.do_not_speed_up = False
 
         # 現在のレーンと制限速度を取得
-        current_lane = f"{self.road}_{self.lane}"
+        current_lane = f"{self.params.road}_{self.params.lane}"
         speed_limit = get_lane_max_speed(current_lane)
 
         # 前方車両がいない場合
-        if self.leader is None:
-            self._controlSpeedBySpeedLimit(speed_limit)
+        if self.params.leader is None:
+            self._control_speed_by_speed_limit(speed_limit)
             return
 
         # 前方車両がいる場合
-        if self.leader_speed is None or self.leader_distance is None:
+        if self.params.leader_speed is None or self.params.leader_distance is None:
             return
-        speed_diff = self.speed - self.leader_speed
-        min_duration = self._calculateSafeDecelDuration(speed_diff)
-        ttc_with_safety_margin = self._calculateTTC(self.leader_distance, speed_diff)
+        speed_diff = self.params.speed - self.params.leader_speed
+        min_duration = self._calculate_safe_decel_duration(speed_diff)
+        ttc_with_safety_margin = self._calculate_ttc(self.params.leader_distance, speed_diff)
         # 前方車両との距離 > safety_gap の場合
-        if self.leader_distance >= self.safety_gap:
+        if self.params.leader_distance >= self.params.safety_gap:
             if speed_diff <= 0:
-                self._controlSpeedBySpeedLimit(speed_limit)
+                self._control_speed_by_speed_limit(speed_limit)
                 return
             if min_duration < ttc_with_safety_margin:
-                self._controlSpeedBySpeedLimit(speed_limit)
+                self._control_speed_by_speed_limit(speed_limit)
                 return
             # 通常の減速
             duration = min(ttc_with_safety_margin, min_duration)
-            traci.vehicle.slowDown(self.id, self.leader_speed, duration)
+            traci.vehicle.slowDown(self.params.id, self.params.leader_speed, duration)
             return
 
         # 前方車両との距離 < safety_gap の場合
-        if self.do_not_speed_up:
+        if self.params.do_not_speed_up:
             return
         if speed_diff >= 0:
             # 通常の減速
-            if self.leader_speed > 1:
-                target_speed = self.leader_speed - 1
+            if self.params.leader_speed > 1:
+                target_speed = self.params.leader_speed - 1
             else:
                 target_speed = 0
             duration = min(ttc_with_safety_margin, min_duration)
-            traci.vehicle.slowDown(self.id, target_speed, duration)
+            traci.vehicle.slowDown(self.params.id, target_speed, duration)
         else:
             return
 
     """ 車線変更を実行 """
 
-    def executeLaneChange(
+    def execute_lane_change(
         self,
         lane_change_history: Dict[str, Dict[str, Any]],
         lane_2_congestion_tail_point: Optional[float],
         lane_1_congestion_head_point: Optional[float],
     ) -> None:
-        if self.lane_change_status == LaneChangeStatus.UNAVAILABLE and self.priority != 1:
+        if self.params.lane_change_status == LaneChangeStatus.UNAVAILABLE and self.params.priority != 1:
             return
 
-        if self.action == CarAction.STAY:
+        if self.params.action == CarAction.STAY:
             return
 
         # Lane2渋滞時、より分岐近くで車線変更を行う
-        if self.lane == 0 or self.route != "r_exit":
-            self.lane_change_pending = False
+        if self.params.lane == 0 or self.params.route != "r_exit":
+            self.params.lane_change_pending = False
         elif (
             # Lane2が渋滞していて、自身が渋滞時車線変更位置より手前にいる場合
             lane_2_congestion_tail_point is not None
             and lane_2_congestion_tail_point < MAINLANE_LENGTH - LANE_CHANGE_MARGIN_DEFAULT
-            and self.lane_pos is not None
-            and self.lane_pos < MAINLANE_LENGTH - LANE_CHANGE_MARGIN_CONGESTED
+            and self.params.lane_pos is not None
+            and self.params.lane_pos < MAINLANE_LENGTH - LANE_CHANGE_MARGIN_CONGESTED
         ):
             if (
                 # Lane1が渋滞していて、その先頭が渋滞時車線変更位置より分岐側にいる場合
                 lane_1_congestion_head_point is not None
                 and lane_1_congestion_head_point > MAINLANE_LENGTH - LANE_CHANGE_MARGIN_CONGESTED - 80
             ):
-                self.lane_change_pending = False
+                self.params.lane_change_pending = False
             else:
-                self.lane_change_pending = True
-                self._resetYieldingVehicleState()
+                self.params.lane_change_pending = True
+                self._reset_yielding_vehicle_state()
         else:
-            self.lane_change_pending = False
+            self.params.lane_change_pending = False
 
         # 車線変更開始地点以前の車線変更は協調しない
-        if self.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
+        if self.params.lane_change_status == LaneChangeStatus.SPEED_IMPROVEMENT_ONLY:
             cooperation_mode = False
-        elif self.lane_change_status == LaneChangeStatus.ALL_ALLOWED:
+        elif self.params.lane_change_status == LaneChangeStatus.ALL_ALLOWED:
             cooperation_mode = True
 
-        direction = "left" if self.action == CarAction.CHANGE_LEFT else "right"
+        direction = "left" if self.params.action == CarAction.CHANGE_LEFT else "right"
         lane_change_amount = 1 if direction == "left" else -1
-        if self.lane is None:
+        if self.params.lane is None:
             return
-        target_lane = self.lane + lane_change_amount
+        target_lane = self.params.lane + lane_change_amount
 
-        if self._canChangeLane(direction, lane_change_history):
+        if self._can_change_lane(direction, lane_change_history):
             # 意図しない挙動でシミュレーションが止まるのを防ぐ 衝突は消滅したけど一応残した
-            if self.road != "MainLane1":
-                self._resetLaneChangeState()
+            if self.params.road != "MainLane1":
+                self._reset_lane_change_state()
                 return
 
             # 車線変更が可能な場合は実行
-            traci.vehicle.changeLane(self.id, target_lane, 0)
+            traci.vehicle.changeLane(self.params.id, target_lane, 0)
 
             # 車線変更情報を辞書に記録
-            lane_change_history[self.id] = {
+            lane_change_history[self.params.id] = {
                 "lane": target_lane,
-                "pos": self.lane_pos,
+                "pos": self.params.lane_pos,
             }
-            self.last_lane_change_time = self.simTime
+            self.params.last_lane_change_time = self.params.sim_time
             # 車線変更中のステータスをリセット
-            self._resetLaneChangeState()
+            self._reset_lane_change_state()
         else:
-            if self.lane_change_pending:
+            if self.params.lane_change_pending:
                 return
             if cooperation_mode:
                 # 協調車輌は毎stepで探索するが、同一の場合にはリセットは行わない
-                self._decideYieldingVehicle()
+                self._decide_yielding_vehicle()
                 # 協調車輌と自身の速度を調整
-                self._adjustSpeedForCooperation()
+                self._adjust_speed_for_cooperation()
             else:
                 # 協調が許可されていない場合(速度向上車線変更)の場合は自身の速度のみ調整
-                self._adjustSpeedForCooperation()
+                self._adjust_speed_for_cooperation()
 
     """ 適切な車間距離の計算 """
 
-    def _calculateSafetyGap(self) -> None:
-        speed_kmh = self.speed * 3.6
+    def _calculate_safety_gap(self) -> None:
+        speed_kmh = self.params.speed * 3.6
         # 空走距離
-        self.reaction_distance = self.speed * reactionTime
+        self.params.reaction_distance = self.params.speed * REACTION_TIME
         # 制動距離
-        self.breaking_distance = (speed_kmh**2) / (254.016 * frictionCoefficient)
+        self.params.breaking_distance = (speed_kmh**2) / (254.016 * FRICTION_COEFFICIENT)
         # 安全距離
-        self.safety_gap = self.reaction_distance + self.breaking_distance + minGap
+        self.params.safety_gap = self.params.reaction_distance + self.params.breaking_distance + MIN_GAP
 
     """ 後続車輌と先行車輌を取得する """
 
-    def _getFollowerAndLeader(self) -> None:
-        self._resetFollowerAndLeaderVehicles()
+    def _get_follower_and_leader(self) -> None:
+        self._reset_follower_and_leader_vehicles()
 
-        if self.road is None or self.lane is None or self.road != "MainLane1":
+        if self.params.road is None or self.params.lane is None or self.params.road != "MainLane1":
             return
 
-        own_position = self.lane_pos
+        own_position = self.params.lane_pos
         if own_position is None:
             return
 
         # レーン番号に基づいて確認すべき隣接レーンを決定
-        check_lanes: List[Tuple[str, int]] = [("current", self.lane)]
-        if self.lane == 0:
+        check_lanes: List[Tuple[str, int]] = [("current", self.params.lane)]
+        if self.params.lane == 0:
             check_lanes.append(("left", 1))  # レーン0の場合、左側のレーン1をチェック
-        elif self.lane == 1:
+        elif self.params.lane == 1:
             check_lanes.append(("right", 0))  # レーン1の場合、右側のレーン0をチェック
             check_lanes.append(("left", 2))  # レーン1の場合、左側のレーン2もチェック
-        elif self.lane == 2:
+        elif self.params.lane == 2:
             check_lanes.append(("right", 1))  # レーン2の場合、右側のレーン1をチェック
 
         for direction, lane_num in check_lanes:
-            lane_id = f"{self.road}_{lane_num}"
+            lane_id = f"{self.params.road}_{lane_num}"
             lane_vehicles = get_lane_last_step_veh_ids(lane_id)
             if not lane_vehicles:
                 continue
@@ -567,7 +568,7 @@ class SimpleCAV:
             leaders: List[Tuple[str, float]] = []
 
             for vehicle_id in lane_vehicles:
-                if vehicle_id == self.id:
+                if vehicle_id == self.params.id:
                     continue
 
                 vehicle_position = get_veh_lane_position(vehicle_id)
@@ -582,27 +583,27 @@ class SimpleCAV:
             leaders = sorted(leaders, key=lambda x: x[1])
 
             if direction == "left":
-                self.left_followers = followers
-                self.left_leaders = leaders
+                self.params.left_followers = followers
+                self.params.left_leaders = leaders
             elif direction == "right":
-                self.right_followers = followers
-                self.right_leaders = leaders
+                self.params.right_followers = followers
+                self.params.right_leaders = leaders
             elif direction == "current":
-                self.current_lane_followers = followers
-                self.current_lane_leaders = leaders
+                self.params.current_lane_followers = followers
+                self.params.current_lane_leaders = leaders
 
-    def _resetFollowerAndLeaderVehicles(self) -> None:
-        self.current_lane_followers = None
-        self.current_lane_leaders = None
-        self.left_followers = None
-        self.left_leaders = None
-        self.right_followers = None
-        self.right_leaders = None
+    def _reset_follower_and_leader_vehicles(self) -> None:
+        self.params.current_lane_followers = None
+        self.params.current_lane_leaders = None
+        self.params.left_followers = None
+        self.params.left_leaders = None
+        self.params.right_followers = None
+        self.params.right_leaders = None
 
     """ 車線変更が可能なポイントを通過したかどうか """
 
-    def _hasPassedLaneChangePoint(self) -> bool:
-        current_pos = self.lane_pos
+    def _has_passed_lane_change_point(self) -> bool:
+        current_pos = self.params.lane_pos
         if current_pos is None:
             return False
         merge_start_pos = MAINLANE_LENGTH - LANE_CHANGE_MARGIN_DEFAULT
@@ -613,119 +614,119 @@ class SimpleCAV:
 
     """ 制限速度に基づいて速度を調整 """
 
-    def _controlSpeedBySpeedLimit(self, speed_limit: float) -> None:
+    def _control_speed_by_speed_limit(self, speed_limit: float) -> None:
         # 減速
-        if self.speed > speed_limit:
-            safe_duration = self._calculateSafeDecelDuration(self.speed - speed_limit)
-            traci.vehicle.slowDown(self.id, speed_limit, safe_duration)
+        if self.params.speed > speed_limit:
+            safe_duration = self._calculate_safe_decel_duration(self.params.speed - speed_limit)
+            traci.vehicle.slowDown(self.params.id, speed_limit, safe_duration)
             return
         # 加速
-        if self.do_not_speed_up:
+        if self.params.do_not_speed_up:
             return
-        safe_duration = self._calculateSafeAccelDuration(speed_limit - self.speed)
-        traci.vehicle.slowDown(self.id, speed_limit, safe_duration)
+        safe_duration = self._calculate_safe_accel_duration(speed_limit - self.params.speed)
+        traci.vehicle.slowDown(self.params.id, speed_limit, safe_duration)
         return
 
     """ 最大減速で速度差を0にするために必要な時間を計算 """
 
-    def _calculateSafeDecelDuration(self, speed_diff: float) -> float:
+    def _calculate_safe_decel_duration(self, speed_diff: float) -> float:
         if speed_diff <= 0:
             return 0
-        return speed_diff / abs(maxDecel)
+        return speed_diff / abs(MAX_DECEL)
 
     """ 最大加速で速度差を0にするために必要な時間を計算 """
 
-    def _calculateSafeAccelDuration(self, speed_diff: float) -> float:
+    def _calculate_safe_accel_duration(self, speed_diff: float) -> float:
         if speed_diff <= 0:
             return 0
-        return speed_diff / abs(maxAccel)
+        return speed_diff / abs(MAX_ACCEL)
 
     """ 現在の速度差で進んだ際に衝突までにかかる時間(TTC) """
 
-    def _calculateTTC(self, distance: float, speed_diff: float) -> float:
+    def _calculate_ttc(self, distance: float, speed_diff: float) -> float:
         if speed_diff <= 0:
             return math.inf
         return distance / speed_diff
 
     """ 衝突回避のための速度調整 """
 
-    def _emergencyBreak(self, targetSpeed: float) -> None:
-        targetSpeed = min(targetSpeed, self.speed, 1)
-        self.emergency_brake_counter += 1
-        traci.vehicle.setSpeed(self.id, targetSpeed)
+    def _emergency_break(self, target_speed: float) -> None:
+        target_speed = min(target_speed, self.params.speed, 1)
+        self.params.emergency_brake_counter += 1
+        traci.vehicle.setSpeed(self.params.id, target_speed)
 
     """ 協調車輌に協調を要求 """
 
-    def _requestCooperation(self) -> None:
-        if self.receiving_cooperative_from_id in vehicle_instances:
-            supporting_vehicle = vehicle_instances[self.receiving_cooperative_from_id]
-            supporting_vehicle._resetLaneChangeState()
-            supporting_vehicle.status = CarStatus.YIELDING
-            supporting_vehicle.providing_cooperative_to_id = self.id
+    def _request_cooperation(self) -> None:
+        if self.params.receiving_cooperative_from_id in vehicle_instances:
+            supporting_vehicle = vehicle_instances[self.params.receiving_cooperative_from_id]
+            supporting_vehicle._reset_lane_change_state()
+            supporting_vehicle.params.status = CarStatus.YIELDING
+            supporting_vehicle.params.providing_cooperative_to_id = self.params.id
 
     """ 協調車輌と自身の速度を調整 """
 
-    def _adjustSpeedForCooperation(self) -> None:
-        if self.leader_distance is not None and self.leader_distance < minGap:
-            if self.leader_speed is not None:
-                self._emergencyBreak(self.leader_speed)
+    def _adjust_speed_for_cooperation(self) -> None:
+        if self.params.leader_distance is not None and self.params.leader_distance < MIN_GAP:
+            if self.params.leader_speed is not None:
+                self._emergency_break(self.params.leader_speed)
             return
 
         # 自身の速度を車線変更に適した速度に調整
         # 目的車線の前方に車線変更を妨げる車両がいるなら,その車両の速度を参考にする
-        if self.lane_change_leader_speed is not None:
-            target_speed = self._calculateSupportingSpeed(
-                self.lane_change_leader_speed,
-                self.current_distance_from_leader,
-                self.required_distance_from_leader,
+        if self.params.lane_change_leader_speed is not None:
+            target_speed = self._calculate_supporting_speed(
+                self.params.lane_change_leader_speed,
+                self.params.current_distance_from_leader,
+                self.params.required_distance_from_leader,
             )
             # 後方車輌が徐々に減速しているのでsafe_durationがstepごとに大きくなってしまい減速が遅くなるため明示的に指定してる
-            traci.vehicle.slowDown(self.id, target_speed, 0.5)
+            traci.vehicle.slowDown(self.params.id, target_speed, 0.5)
         # 目的車線の前方に車線変更を妨げる車両がいないなら現在の車線のリーダーの速度を参考にする
-        elif self.leader_speed is not None:
-            target_speed = self.leader_speed
-            traci.vehicle.slowDown(self.id, target_speed, 0.5)
+        elif self.params.leader_speed is not None:
+            target_speed = self.params.leader_speed
+            traci.vehicle.slowDown(self.params.id, target_speed, 0.5)
         # 前方に車両がいないなら制限速度に合わせる
         else:
             # 現在のレーンと制限速度を取得
-            current_lane = f"{self.road}_{self.lane}"
+            current_lane = f"{self.params.road}_{self.params.lane}"
             speed_limit = get_lane_max_speed(current_lane)
-            self._controlSpeedBySpeedLimit(speed_limit)
+            self._control_speed_by_speed_limit(speed_limit)
 
         # 協調車両がいる場合は相手の速度も調整
-        if self.receiving_cooperative_from_id:
-            supporting_vehicle = vehicle_instances[self.receiving_cooperative_from_id]
-            own_position = self.lane_pos
+        if self.params.receiving_cooperative_from_id:
+            supporting_vehicle = vehicle_instances[self.params.receiving_cooperative_from_id]
+            own_position = self.params.lane_pos
 
-            supporting_vehicle._adjustSupportingSpeed(
-                self.speed,
+            supporting_vehicle._adjust_supporting_speed(
+                self.params.speed,
                 own_position,
-                self.current_distance_from_follower,
-                self.required_distance_from_follower,
+                self.params.current_distance_from_follower,
+                self.params.required_distance_from_follower,
             )
 
     """ 車線変更を支援する側の速度の調整 """
 
-    def _adjustSupportingSpeed(
+    def _adjust_supporting_speed(
         self,
         requesting_speed: float,
         requesting_position: Optional[float],
         current_distance: Optional[float],
         required_distance: Optional[float],
     ) -> None:
-        if self.leader_distance is not None and self.leader_distance < minGap:
-            if self.leader_speed is not None:
-                self._emergencyBreak(self.leader_speed)
+        if self.params.leader_distance is not None and self.params.leader_distance < MIN_GAP:
+            if self.params.leader_speed is not None:
+                self._emergency_break(self.params.leader_speed)
             return
 
         # 安全な車間距離を確保しつつ速度を調整
-        target_speed = self._calculateSupportingSpeed(requesting_speed, current_distance, required_distance)
-        safe_duration = self._calculateSafeDecelDuration(self.speed - target_speed)
-        traci.vehicle.slowDown(self.id, target_speed, safe_duration)
+        target_speed = self._calculate_supporting_speed(requesting_speed, current_distance, required_distance)
+        safe_duration = self._calculate_safe_decel_duration(self.params.speed - target_speed)
+        traci.vehicle.slowDown(self.params.id, target_speed, safe_duration)
 
     """ 車線変更を支援する側の適切な速度を計算 """
 
-    def _calculateSupportingSpeed(
+    def _calculate_supporting_speed(
         self,
         requesting_speed: float,
         current_distance: Optional[float],
@@ -742,20 +743,20 @@ class SimpleCAV:
 
     """ 協調車両を決定 """
 
-    def _decideYieldingVehicle(self) -> None:
+    def _decide_yielding_vehicle(self) -> None:
         candidates: Optional[List[Tuple[str, float]]] = None
-        if self.action == CarAction.CHANGE_LEFT:
-            candidates = self.left_followers
-        elif self.action == CarAction.CHANGE_RIGHT:
-            candidates = self.right_followers
+        if self.params.action == CarAction.CHANGE_LEFT:
+            candidates = self.params.left_followers
+        elif self.params.action == CarAction.CHANGE_RIGHT:
+            candidates = self.params.right_followers
         else:
-            if self.receiving_cooperative_from_id is not None:
-                self._resetYieldingVehicleState()
+            if self.params.receiving_cooperative_from_id is not None:
+                self._reset_yielding_vehicle_state()
             return
 
         if not candidates:
-            if self.receiving_cooperative_from_id is not None:
-                self._resetYieldingVehicleState()
+            if self.params.receiving_cooperative_from_id is not None:
+                self._reset_yielding_vehicle_state()
             return
 
         # 優先順位に基づいて候補を選定
@@ -765,98 +766,98 @@ class SimpleCAV:
         for vehicle_id, distance in candidates:
             if vehicle_id in vehicle_instances:
                 vehicle = vehicle_instances[vehicle_id]
-                if vehicle.status == CarStatus.NORMAL or vehicle.status == CarStatus.LANE_CHANGING:
+                if vehicle.params.status == CarStatus.NORMAL or vehicle.params.status == CarStatus.LANE_CHANGING:
                     viable_candidates.append((vehicle_id, distance))
 
         # 候補車両があれば、最も近い車両を選択
         if viable_candidates:
-            if self.speed == 0:
+            if self.params.speed == 0:
                 # 速度が0の場合は最も近い車両の次に近い車両を選択
                 new_receiving_cooperative_from_id = viable_candidates[1][0] if len(viable_candidates) > 1 else None
             # 速度が0でない場合は最も近い車両を選択
             new_receiving_cooperative_from_id = viable_candidates[0][0]
 
         if new_receiving_cooperative_from_id is None:
-            if self.receiving_cooperative_from_id is not None:
-                self._resetYieldingVehicleState()
+            if self.params.receiving_cooperative_from_id is not None:
+                self._reset_yielding_vehicle_state()
             return
 
-        if self.receiving_cooperative_from_id is not None:
-            if new_receiving_cooperative_from_id != self.receiving_cooperative_from_id:
+        if self.params.receiving_cooperative_from_id is not None:
+            if new_receiving_cooperative_from_id != self.params.receiving_cooperative_from_id:
                 # 新たに協調車両を決定するため過去の情報をリセット
-                self._resetYieldingVehicleState()
-                self.receiving_cooperative_from_id = new_receiving_cooperative_from_id
-                self._requestCooperation()
+                self._reset_yielding_vehicle_state()
+                self.params.receiving_cooperative_from_id = new_receiving_cooperative_from_id
+                self._request_cooperation()
             else:
                 # 既に協調車両が決定されている場合はそのまま
                 return
         else:
-            self.receiving_cooperative_from_id = new_receiving_cooperative_from_id
-            self._requestCooperation()
+            self.params.receiving_cooperative_from_id = new_receiving_cooperative_from_id
+            self._request_cooperation()
 
-    def _resetLaneChangeState(self) -> None:
-        self.status = CarStatus.NORMAL
-        self.action = CarAction.STAY
-        self.priority = 0
-        self.required_distance_from_follower = None
-        self.current_distance_from_follower = None
-        self.required_distance_from_leader = None
-        self.current_distance_from_leader = None
-        self.lane_change_leader_speed = None
-        self.do_not_speed_up = False
-        self.lane_change_pending = False
-        self._resetYieldingVehicleState()
+    def _reset_lane_change_state(self) -> None:
+        self.params.status = CarStatus.NORMAL
+        self.params.action = CarAction.STAY
+        self.params.priority = 0
+        self.params.required_distance_from_follower = None
+        self.params.current_distance_from_follower = None
+        self.params.required_distance_from_leader = None
+        self.params.current_distance_from_leader = None
+        self.params.lane_change_leader_speed = None
+        self.params.do_not_speed_up = False
+        self.params.lane_change_pending = False
+        self._reset_yielding_vehicle_state()
 
-    def _resetLaneChangeStateKeepYielding(self) -> None:
-        if self.status != CarStatus.YIELDING:
-            self.status = CarStatus.NORMAL
-        self.action = CarAction.STAY
-        self.priority = 0
-        self.required_distance_from_follower = None
-        self.current_distance_from_follower = None
-        self.required_distance_from_leader = None
-        self.current_distance_from_leader = None
-        self.lane_change_leader_speed = None
-        self.do_not_speed_up = False
-        self.lane_change_pending = False
-        self._resetYieldingVehicleState()
+    def _reset_lane_change_state_keep_yielding(self) -> None:
+        if self.params.status != CarStatus.YIELDING:
+            self.params.status = CarStatus.NORMAL
+        self.params.action = CarAction.STAY
+        self.params.priority = 0
+        self.params.required_distance_from_follower = None
+        self.params.current_distance_from_follower = None
+        self.params.required_distance_from_leader = None
+        self.params.current_distance_from_leader = None
+        self.params.lane_change_leader_speed = None
+        self.params.do_not_speed_up = False
+        self.params.lane_change_pending = False
+        self._reset_yielding_vehicle_state()
 
-    def _resetYieldingVehicleState(self) -> None:
-        if self.receiving_cooperative_from_id in vehicle_instances:
-            supporting_vehicle = vehicle_instances[self.receiving_cooperative_from_id]
-            supporting_vehicle.providing_cooperative_to_id = None
-            supporting_vehicle.do_not_speed_up = False
-            if supporting_vehicle.action != CarAction.STAY:
-                supporting_vehicle.status = CarStatus.LANE_CHANGING
+    def _reset_yielding_vehicle_state(self) -> None:
+        if self.params.receiving_cooperative_from_id in vehicle_instances:
+            supporting_vehicle = vehicle_instances[self.params.receiving_cooperative_from_id]
+            supporting_vehicle.params.providing_cooperative_to_id = None
+            supporting_vehicle.params.do_not_speed_up = False
+            if supporting_vehicle.params.action != CarAction.STAY:
+                supporting_vehicle.params.status = CarStatus.LANE_CHANGING
             else:
-                supporting_vehicle.status = CarStatus.NORMAL
-            self.receiving_cooperative_from_id = None
+                supporting_vehicle.params.status = CarStatus.NORMAL
+            self.params.receiving_cooperative_from_id = None
 
     """ 車線変更が安全かどうか """
     """ 最大加減速度、車間距離、一つ挟んだ車線とのコリジョンを考慮 """
 
-    def _canChangeLane(self, direction: str, lane_change_history: Dict[str, Dict[str, Any]]) -> bool:
-        if self.lane is None:
+    def _can_change_lane(self, direction: str, lane_change_history: Dict[str, Dict[str, Any]]) -> bool:
+        if self.params.lane is None:
             return False
-        target_lane = self.lane + (1 if direction == "left" else -1)
-        check_range = self.length + minGap
+        target_lane = self.params.lane + (1 if direction == "left" else -1)
+        check_range = self.params.length + MIN_GAP
 
         # 同一ステップでの車線変更を考慮する
         for _changed_veh_id, changed_info in lane_change_history.items():
             # 変更先レーンが同じかどうか確認
             if changed_info["lane"] == target_lane:
                 # レーン上のポジションを比較（ここでは lane_pos での比較例）
-                if abs(changed_info["pos"] - self.lane_pos) < check_range:
+                if abs(changed_info["pos"] - self.params.lane_pos) < check_range:
                     return False
 
         # 一つ挟んだ車線とのコリジョンを考慮
-        if target_lane == 1 and self.road == "MainLane1":
-            own_pos = self.lane_pos
+        if target_lane == 1 and self.params.road == "MainLane1":
+            own_pos = self.params.lane_pos
             if own_pos is None:
                 return False
 
-            opposite_lane = 2 if self.lane == 0 else 0
-            opposite_lane_vehicle_ids = get_lane_last_step_veh_ids(f"{self.road}_{opposite_lane}")
+            opposite_lane = 2 if self.params.lane == 0 else 0
+            opposite_lane_vehicle_ids = get_lane_last_step_veh_ids(f"{self.params.road}_{opposite_lane}")
 
             for veh_id in opposite_lane_vehicle_ids:
                 if veh_id in vehicle_instances:
@@ -864,79 +865,86 @@ class SimpleCAV:
                     veh_pos = get_veh_lane_position(veh_id)
 
                     # 一つ挟んだ車線とのコリジョンが発生する場合には車線変更を許可しない
-                    if abs(veh_pos - own_pos) < check_range and opposite_vehicle.action != CarAction.STAY:
+                    if abs(veh_pos - own_pos) < check_range and opposite_vehicle.params.action != CarAction.STAY:
                         return False
 
-        followers = self.left_followers if direction == "left" else self.right_followers
-        leaders = self.left_leaders if direction == "left" else self.right_leaders
+        followers = self.params.left_followers if direction == "left" else self.params.right_followers
+        leaders = self.params.left_leaders if direction == "left" else self.params.right_leaders
 
         # 後続車両との安全性チェック
         if followers:
             follower_id, follower_distance = followers[0]
             if follower_id in vehicle_instances:
                 follower = vehicle_instances[follower_id]
-                speed_diff = follower.speed - self.speed
+                speed_diff = follower.params.speed - self.params.speed
 
                 if speed_diff <= 0:  # 後続車両が遅い場合
                     # 最小限の車間距離のみ要求
-                    required_distance = self.length + minGap * 1.5
+                    required_distance = self.params.length + MIN_GAP * 1.5
                 else:
-                    required_distance = self.length + minGap * 1.5 + follower.safety_gap * (speed_diff / maxSpeed)
+                    required_distance = (
+                        self.params.length + MIN_GAP * 1.5 + follower.params.safety_gap * (speed_diff / MAX_SPEED)
+                    )
                     # 必要な後続との距離は、車両長 + minGap + 後続の制動距離(+速度差)を考慮した値
                     # 速度差が大きい場合には制動距離をより考慮したい。速度差は 0 ~ 27のレンジなので、それを0 ~ 1に正規化して考慮する
 
                 if follower_distance < required_distance:
-                    self.current_distance_from_follower = follower_distance
-                    self.required_distance_from_follower = required_distance
+                    self.params.current_distance_from_follower = follower_distance
+                    self.params.required_distance_from_follower = required_distance
 
         # 先行車両との安全性チェック
         if leaders:
             leader_id, leader_distance = leaders[0]
             if leader_id in vehicle_instances:
                 leader = vehicle_instances[leader_id]
-                speed_diff = self.speed - leader.speed
+                speed_diff = self.params.speed - leader.params.speed
 
                 if speed_diff <= 0:  # 自車両が遅い場合
                     # 最小限の車間距離のみ要求
-                    required_distance = self.length + minGap * 1.5
+                    required_distance = self.params.length + MIN_GAP * 1.5
                 else:
                     # 車線変更時は通常のsafety_gapより短い距離を許容
-                    required_distance = self.length + minGap * 1.5 + self.safety_gap * (speed_diff / maxSpeed)
+                    required_distance = (
+                        self.params.length + MIN_GAP * 1.5 + self.params.safety_gap * (speed_diff / MAX_SPEED)
+                    )
 
                 if leader_distance < required_distance:
-                    self.current_distance_from_leader = leader_distance
-                    self.required_distance_from_leader = required_distance
-                    self.lane_change_leader_speed = leader.speed
+                    self.params.current_distance_from_leader = leader_distance
+                    self.params.required_distance_from_leader = required_distance
+                    self.params.lane_change_leader_speed = leader.params.speed
 
-        if self.required_distance_from_follower is not None or self.required_distance_from_leader is not None:
+        if (
+            self.params.required_distance_from_follower is not None
+            or self.params.required_distance_from_leader is not None
+        ):
             return False
 
         return True
 
     """ 車線変更を実行した際に速度が上昇するか """
 
-    def _isPredictedSpeedIncrease(self, direction: str) -> bool:
+    def _is_predicted_speed_increase(self, direction: str) -> bool:
         if direction == "left":
-            target_lane_leaders = self.left_leaders
+            target_lane_leaders = self.params.left_leaders
         elif direction == "right":
-            target_lane_leaders = self.right_leaders
+            target_lane_leaders = self.params.right_leaders
         else:
             return False
 
-        if self.current_lane_leaders is not None and len(self.current_lane_leaders) == 0:
+        if self.params.current_lane_leaders is not None and len(self.params.current_lane_leaders) == 0:
             return False
 
         if not target_lane_leaders:
             return True
 
-        current_lane_leaders = self.current_lane_leaders if self.current_lane_leaders is not None else []
+        current_lane_leaders = self.params.current_lane_leaders if self.params.current_lane_leaders is not None else []
         current_lane_leader_speeds = [get_veh_speed(leader[0]) for leader in current_lane_leaders]
         if len(current_lane_leader_speeds) > 0:
             current_lane_avg_leader_speed = sum(current_lane_leader_speeds) / len(current_lane_leader_speeds)
         else:
             current_lane_avg_leader_speed = 0
         # 自分自身の速度と走行中の車線の平均速度の大きい方を取得
-        baseline_speed = max(self.speed, current_lane_avg_leader_speed)
+        baseline_speed = max(self.params.speed, current_lane_avg_leader_speed)
 
         target_lane_leader_speeds = [get_veh_speed(leader[0]) for leader in target_lane_leaders]
         target_lane_avg_leader_speed = sum(target_lane_leader_speeds) / len(target_lane_leader_speeds)
