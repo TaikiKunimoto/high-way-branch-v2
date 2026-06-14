@@ -5,7 +5,6 @@
 ``custom.py`` の run() を踏襲しつつ V2CAV を用い、タイムスペース図(matplotlib)出力は省略する。
 """
 
-import csv
 from datetime import datetime
 import os
 import random
@@ -15,17 +14,14 @@ from pydantic import BaseModel, Field
 
 from simulationStatistics.simulation_statistics import SimulationStatistics
 from utils.traci_wrapper import (
-    get_lane_last_step_veh_ids,
+    get_colliding_veh_id_list,
+    get_edge_lane_number,
     get_sim_arrived_veh_id_list,
     get_sim_departed_veh_id_list,
     get_sim_time,
     get_veh_id_list,
-    get_veh_lane_position,
-    get_veh_speed,
 )
 from v2.constants import (
-    CONGESTION_SPEED,
-    MIN_CONGESTED_VEHICLES,
     TC,
     TIME_STEP,
 )
@@ -57,6 +53,11 @@ class V2Simulation(BaseModel):
 
     simulation_time: float
     env: Environment
+    total_inflow: float  # 総流入量 Q [veh/h]
+    mlc_ratio: float  # 必須LC車の比率 f（0..1）
+    seed: str  # 乱数シード（統計ラベル用。random.seed の実行はエントリ側）
+    obstacle: Obstacle | None = None  # 突発障害物（指定レーン・位置・時刻）。None なら障害物なし
+
     veh_id: int = 0  # 次に投入する車両へ振る連番ID
     # グループ別の流入時刻（環境のグループ定義順を保持）
     group_depart_times: list[tuple[Group, list[float]]] = Field(default_factory=list)
@@ -70,31 +71,15 @@ class V2Simulation(BaseModel):
     # 各車線の待ち行列（流入レーン選択の負荷分散に使う）。レーンは環境により可変なので動的に作る
     lane_queues: dict[str, list[str]] = Field(default_factory=dict)
 
-    def run(
-        self,
-        total_inflow: float,
-        mlc_ratio: float,
-        stats: SimulationStatistics,
-        seed: str,
-        obstacle: Obstacle | None = None,  # 突発障害物（指定レーン・位置・時刻）。None なら障害物なし
-    ) -> None:
-        self._set_environment(total_inflow, mlc_ratio)
+    def run(self, stats: SimulationStatistics) -> None:
+        self._set_environment()
         # 突発障害物。発生後、本線レーン数はエスカレーションの回避先選択に使う
-        obstacle_num_lanes = traci.edge.getLaneNumber(self.env.mainlane_edge) if obstacle is not None else 0
+        obstacle_num_lanes = get_edge_lane_number(self.env.mainlane_edge) if self.obstacle is not None else 0
         obstacle_placed_pos: float | None = None
         obstacle_target_id: str | None = None  # 位置到達トリガで pos 手前から監視中の車（pos 到達で停止＝障害物化）
-        if obstacle is not None:
-            obstacle.validate_for(self.env.mainlane_edge, obstacle_num_lanes, self.env.mainlane_length)
+        if self.obstacle is not None:
+            self.obstacle.validate_for(self.env.mainlane_edge, obstacle_num_lanes, self.env.mainlane_length)
 
-        last_recorded_second = -1
-        tail_position_list: list[tuple[float, float]] = []
-        max_tail_position = 0.0
-
-        r_pass_departed: list[str] = []
-        r_exit_departed: list[str] = []
-        r_pass_exited: list[str] = []
-        r_exit_exited: list[str] = []
-        r_exit_running: dict[str, float] = {}
         running_list: list[str] = []
         tc_accumulator = 0.0
         last_request_log_sec = -1
@@ -113,14 +98,8 @@ class V2Simulation(BaseModel):
             departed_list = get_sim_departed_veh_id_list()  # 直近stepで投入された（出発した）車両ID
             running_list = get_veh_id_list()  # 現在ネットワーク上を走行中の全車両ID
 
-            # tail position の記録（タイムスペース指標用）
             current_time = get_sim_time()
             current_sec = int(current_time)
-            if current_sec != last_recorded_second:
-                tail_pos = self.env.mainlane_length - self._get_congestion_point()
-                tail_position_list.append((current_time, tail_pos))
-                max_tail_position = max(max_tail_position, tail_pos)
-                last_recorded_second = current_sec
 
             # --- 到着/未発進/出発処理 と 観測。全車を先に観測し、スナップショット S_t の一貫性を保つ ---
             poplist: list[int] = []  # このstepで到着し self.vehicles から削除する要素インデックス
@@ -133,7 +112,7 @@ class V2Simulation(BaseModel):
                     poplist.append(index)
                     self.exit_vehicles.append(vid)
                     veh.record_arrival_time()
-                    veh.accumulate_exit_stats(stats, r_pass_exited, r_exit_exited)
+                    veh.accumulate_exit_stats(stats)
                     continue
 
                 # 混雑で未発進の車両
@@ -146,10 +125,6 @@ class V2Simulation(BaseModel):
                 if vid in departed_list:
                     veh.record_departure_time()
                     self.total_departed.append(vid)
-                    if veh.target_lane is None:  # 必須LCなし（through）
-                        r_pass_departed.append(vid)
-                    else:  # 必須LC車
-                        r_exit_departed.append(vid)
                     if vid in self.canceled_vehicles:
                         self.canceled_vehicles.remove(vid)
 
@@ -163,13 +138,13 @@ class V2Simulation(BaseModel):
                     stats.calculate_TTC(veh.leader_distance, veh.leader_speed, veh.speed)
 
             # --- 突発障害物（位置到達トリガ）。appear_time 以降、指定レーンで pos に到達した最初の車を停止＝障害物化 ---
-            if obstacle is not None and obstacle_placed_pos is None and current_time >= obstacle.appear_time:
-                obstacle_target_id, obstacle_placed_pos = obstacle.place(
+            if self.obstacle is not None and obstacle_placed_pos is None and current_time >= self.obstacle.appear_time:
+                obstacle_target_id, obstacle_placed_pos = self.obstacle.place(
                     active, self.env.mainlane_edge, obstacle_target_id
                 )
             # 障害物より後方・同一レーンの through 車に必須LC（回避）を動的付与＝エスカレーション（コア機構 §4）
-            if obstacle is not None and obstacle_placed_pos is not None:
-                obstacle.escalate(active, self.env.mainlane_edge, obstacle_placed_pos, obstacle_num_lanes)
+            if self.obstacle is not None and obstacle_placed_pos is not None:
+                self.obstacle.escalate(active, self.env.mainlane_edge, obstacle_placed_pos, obstacle_num_lanes)
 
             # --- 毎Tc 2フェーズ調停。Phase A（鍵計算）→ Phase B（割当＋役割付与）。Layer2 実行は制御後に行う ---
             tc_accumulator += TIME_STEP
@@ -203,25 +178,18 @@ class V2Simulation(BaseModel):
             self._add_vehicle()
 
         # 障害物指定があったのに最後まで配置できなければ、黙って no-op にせず原因つきで失敗させる
-        if obstacle is not None and obstacle_placed_pos is None:
+        if self.obstacle is not None and obstacle_placed_pos is None:
             raise RuntimeError(
-                f"障害物を配置できませんでした: 指定レーン {obstacle.lane} で pos {obstacle.pos}m に到達する車両が "
-                f"appear_time {obstacle.appear_time}s 以降シミュレーション終了まで現れませんでした。"
+                f"障害物を配置できませんでした: 指定レーン {self.obstacle.lane} で pos {self.obstacle.pos}m に到達する車両が "
+                f"appear_time {self.obstacle.appear_time}s 以降シミュレーション終了まで現れませんでした。"
                 "流入量(inflow)・レーン・位置・時刻の指定を確認してください。"
             )
 
-        # 終了時、残車両の統計を更新
+        # 終了時、残車両の統計を更新（全体平均速度のみ。route="" でグループ別バケツには入れない）
         for veh in self.vehicles:
             if veh.id not in running_list:
                 continue
-            if veh.target_lane is None:  # 必須LCなし（through）
-                stats.calculate_vehicle_average_speed("r_pass", veh.speed_history)
-            else:  # 必須LC車
-                stats.calculate_vehicle_average_speed("r_exit", veh.speed_history)
-                if veh.pos_x is not None:
-                    r_exit_running[veh.id] = veh.pos_x
-
-        r_exit_running_list = sorted(r_exit_running, key=lambda v: r_exit_running[v], reverse=True)
+            stats.calculate_vehicle_average_speed("", veh.speed_history)
 
         collided: set[str] = set()
         for _, vehicles in self.collision_history:
@@ -233,33 +201,26 @@ class V2Simulation(BaseModel):
         print(f"Phase B: Tc rounds with double-assigned providers (should be 0): {double_assign_events}")
         print(f"Layer2: total instant lane changes executed: {total_lc}")
         total_collisions, total_involved = self._print_collision_summary()
-        self._write_tail_csv(seed, tail_position_list)
 
         results = {
             "total_generated_vehicle": self.veh_id,
             "total_departed_vehicle": self.total_departed,
             "running_vehicle": running_list,
             "exit_vehicle": self.exit_vehicles,
-            "r_pass_departed_vehicle": r_pass_departed,
-            "r_exit_departed_vehicle": r_exit_departed,
-            "r_pass_exit_vehicle": r_pass_exited,
-            "r_exit_exit_vehicle": r_exit_exited,
-            "r_exit_running_vehicle": r_exit_running_list,
             "canceled_vehicle": canceled_without_collision,
             "traffic_volume": len(self.total_departed) * (3600 / self.simulation_time),
             "total_collisions": total_collisions,
             "total_vehicles_involved": total_involved,
-            "max_tail_position": max_tail_position,
         }
-        stats.add_result(self.simulation_time, seed, self.inflow_through, self.inflow_mlc, results)
+        stats.add_result(self.simulation_time, self.seed, self.inflow_through, self.inflow_mlc, results)
         traci.close()
 
-    def _set_environment(self, total_inflow: float, mlc_ratio: float) -> None:
+    def _set_environment(self) -> None:
         """環境のグループ別流入量（総流入 Q × 必須LC比率 f から展開）に従い、流入時刻を乱数で決定（seed で決定的）。
 
         グループ定義順に random.sample を呼ぶことで決定性を保つ（分流D では through→exiting＝旧 pass→exit と一致）。
         """
-        for group, rate in self.env.group_rates(total_inflow, mlc_ratio):
+        for group, rate in self.env.group_rates(self.total_inflow, self.mlc_ratio):
             k = int((self.simulation_time / 3600) * rate)
             seconds = sorted(random.sample(range(int(self.simulation_time)), k))
             # 1秒以上間隔を確保（同一stepへの偏りを避ける）
@@ -273,7 +234,7 @@ class V2Simulation(BaseModel):
 
     def _get_depart_lane(self, edge_id: str, allowed_lanes: tuple[int, ...] | None) -> str:
         """グループの投入レーン候補（None=全レーン）の中で待ち行列が最短のレーンを選ぶ（負荷分散）。"""
-        lanes_total: int = traci.edge.getLaneNumber(edge_id)
+        lanes_total: int = get_edge_lane_number(edge_id)
         candidates = [str(i) for i in (allowed_lanes if allowed_lanes is not None else range(lanes_total))]
         queue_length = {lane: len(self.lane_queues.get(lane, [])) for lane in candidates}
         lanes_without_queue = [lane for lane in candidates if queue_length[lane] == 0]
@@ -312,27 +273,9 @@ class V2Simulation(BaseModel):
                 queue.remove(veh_id)
                 return
 
-    def _get_congestion_point(self) -> float:
-        """目標車線で連続 MIN_CONGESTED_VEHICLES 台が低速なら、その末尾位置を渋滞末尾とみなす（tail 指標用）。"""
-        lane2_vehicles = get_lane_last_step_veh_ids(f"{self.env.mainlane_edge}_2")
-        if len(lane2_vehicles) < MIN_CONGESTED_VEHICLES:
-            return self.env.mainlane_length
-
-        sorted_vehicles = sorted(lane2_vehicles, key=get_veh_lane_position, reverse=True)
-        congested_sequence: list[str] = []
-        tail_position = self.env.mainlane_length
-        for vid in sorted_vehicles:
-            if get_veh_speed(vid) <= CONGESTION_SPEED:
-                congested_sequence.append(vid)
-                if len(congested_sequence) >= MIN_CONGESTED_VEHICLES:
-                    tail_position = get_veh_lane_position(congested_sequence[-1])
-            else:
-                congested_sequence = []
-        return tail_position
-
     def _check_collision(self) -> None:
         """衝突を検出して記録（重複記録は抑制）。"""
-        colliding_ids: list[str] = list(traci.simulation.getCollidingVehiclesIDList())
+        colliding_ids: list[str] = get_colliding_veh_id_list()
         if not colliding_ids:
             return
         collision_time = get_sim_time() - 0.1
@@ -370,10 +313,3 @@ class V2Simulation(BaseModel):
         for time_val, vehicles in self.collision_history:
             print(f"Time {time_val:.1f}: Collision between vehicles: {', '.join(vehicles)}")
         return total_collisions, total_vehicles_involved
-
-    def _write_tail_csv(self, seed: str, tail_position_list: list[tuple[float, float]]) -> None:
-        tail_csv = f"{OUTPUT_DIR}/tail_positions_{self.env.name}_through{self.inflow_through}_mlc{self.inflow_mlc}_seed{seed}.csv"
-        with open(tail_csv, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["time", "tail_position"])
-            writer.writerows(tail_position_list)

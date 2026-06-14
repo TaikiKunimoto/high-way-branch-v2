@@ -86,6 +86,11 @@ def get_sim_time() -> float:
     return cast(float, traci.simulation.getTime())
 
 
+def get_colliding_veh_id_list() -> list[str]:
+    """直近 step で衝突した車両IDのリストを返す。"""
+    return cast(list[str], traci.simulation.getCollidingVehiclesIDList())
+
+
 # Lane系の関数
 def get_lane_max_speed(lane_id: str) -> float:
     """レーンの制限速度 [m/s] を返す。"""
@@ -95,3 +100,9 @@ def get_lane_max_speed(lane_id: str) -> float:
 def get_lane_last_step_veh_ids(lane_id: str) -> list[str]:
     """直近 step でそのレーン上にいた車両IDのリストを返す。"""
     return cast(list[str], traci.lane.getLastStepVehicleIDs(lane_id))
+
+
+# Edge系の関数
+def get_edge_lane_number(edge_id: str) -> int:
+    """edge のレーン数を返す。"""
+    return cast(int, traci.edge.getLaneNumber(edge_id))

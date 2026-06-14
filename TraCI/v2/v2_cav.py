@@ -111,20 +111,11 @@ class V2CAV(BaseModel):
         """到着（範囲外に出た）時刻を記録する。到着後も snapshot には載るが、以降の観測・制御は行わない。"""
         self.arrival_time = get_sim_time()
 
-    def accumulate_exit_stats(
-        self, stats: "SimulationStatistics", r_pass_exited: list[str], r_exit_exited: list[str]
-    ) -> None:
-        """範囲外に出た自車の走行時間・平均速度を統計に加算する（through=r_pass バケツ／必須LC車=r_exit バケツ）。"""
-        if self.target_lane is None:  # 必須LCなし（through）
-            if self.departure_time is not None and self.arrival_time is not None:
-                stats.calculate_travel_time("r_pass", self.departure_time, self.arrival_time)
-            stats.calculate_vehicle_average_speed("r_pass", self.speed_history)
-            r_pass_exited.append(self.id)
-        else:  # 必須LC車
-            if self.departure_time is not None and self.arrival_time is not None:
-                stats.calculate_travel_time("r_exit", self.departure_time, self.arrival_time)
-            stats.calculate_vehicle_average_speed("r_exit", self.speed_history)
-            r_exit_exited.append(self.id)
+    def accumulate_exit_stats(self, stats: "SimulationStatistics") -> None:
+        """範囲外に出た自車の走行時間・平均速度を統計に加算する（全体のみ。route="" でグループ別バケツには入れない）。"""
+        if self.departure_time is not None and self.arrival_time is not None:
+            stats.calculate_travel_time("", self.departure_time, self.arrival_time)
+        stats.calculate_vehicle_average_speed("", self.speed_history)
 
     def update_activation(self, mainlane_edge: str) -> None:
         """必須LC要求の活性化窓に初めて入った時刻を記録する（早め固定活性化、一度だけ）。"""

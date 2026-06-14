@@ -81,5 +81,12 @@ if __name__ == "__main__":
 
     sumo_binary = checkBinary("sumo" if options.nogui else "sumo-gui")
     _start_sim(sumo_binary, env.sumocfg)
-    sim = V2Simulation(simulation_time=SIMULATION_TIME, env=env)
-    sim.run(total_inflow, mlc_ratio, stats, seed, obstacle)
+    sim = V2Simulation(
+        simulation_time=SIMULATION_TIME,
+        env=env,
+        total_inflow=total_inflow,
+        mlc_ratio=mlc_ratio,
+        seed=seed,
+        obstacle=obstacle,
+    )
+    sim.run(stats)
