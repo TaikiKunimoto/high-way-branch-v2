@@ -24,14 +24,11 @@ from utils.traci_wrapper import (
 )
 from v2.constants import (
     CONGESTION_SPEED,
-    EXIT_ROUTE,
-    MAINLANE_EDGE,
-    MAINLANE_LENGTH,
     MIN_CONGESTED_VEHICLES,
-    PASS_ROUTE,
     TC,
     TIME_STEP,
 )
+from v2.environment import Environment, Group
 from v2.lc_request import LCRequest, build_requests, in_activation_window
 from v2.pair_executor import execute_pairs
 from v2.priority import Key, order_requests
@@ -52,11 +49,14 @@ OUTPUT_DIR = "simulationStatistics/statistics/v2"
 class V2SimulationState:
     """1回のシミュレーションを通じて保持する状態。"""
 
-    def __init__(self, simulation_time: float) -> None:
+    def __init__(self, simulation_time: float, env: Environment) -> None:
         self.simulation_time: float = simulation_time
+        self.env: Environment = env
         self.veh_id: int = 0
-        self.depart_time_pass: list[float] = []
-        self.depart_time_exit: list[float] = []
+        # グループ別の流入時刻（環境のグループ定義順を保持）
+        self.group_depart_times: list[tuple[Group, list[float]]] = []
+        self.inflow_through: int = 0  # CSV 用: 必須LCなし車の流入量
+        self.inflow_mlc: int = 0  # CSV 用: 必須LC車の流入量
         self.vehicles: list[V2CAV] = []
         self.total_departed: list[str] = []
         self.exit_vehicles: list[str] = []
@@ -66,8 +66,10 @@ class V2SimulationState:
         self.lane_queues: dict[str, list[str]] = {"0": [], "1": [], "2": []}
 
 
-def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: SimulationStatistics, seed: str) -> None:
-    _set_environment(state, inflow_pass, inflow_exit)
+def run(
+    state: V2SimulationState, total_inflow: float, mlc_ratio: float, stats: SimulationStatistics, seed: str
+) -> None:
+    _set_environment(state, total_inflow, mlc_ratio)
 
     last_recorded_second = -1
     tail_position_list: list[tuple[float, float]] = []
@@ -100,7 +102,7 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
         current_time = get_sim_time()
         current_sec = int(current_time)
         if current_sec != last_recorded_second:
-            tail_pos = MAINLANE_LENGTH - _get_congestion_point()
+            tail_pos = state.env.mainlane_length - _get_congestion_point(state.env)
             tail_position_list.append((current_time, tail_pos))
             max_tail_position = max(max_tail_position, tail_pos)
             last_recorded_second = current_sec
@@ -129,15 +131,15 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
             if vid in departed_list:
                 veh.record_departure_time()
                 state.total_departed.append(vid)
-                if veh.params.route == PASS_ROUTE:
+                if veh.params.target_lane is None:  # 必須LCなし（through）
                     r_pass_departed.append(vid)
-                elif veh.params.route == EXIT_ROUTE:
+                else:  # 必須LC車
                     r_exit_departed.append(vid)
                 if vid in state.canceled_vehicles:
                     state.canceled_vehicles.remove(vid)
 
             veh.update_observation()
-            _update_activation(veh)
+            _update_activation(veh, state.env.mainlane_edge)
             active.append(veh)
             _update_lane_queue(state, vid)
 
@@ -148,7 +150,7 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
         tc_accumulator += TIME_STEP
         if tc_accumulator + 1e-9 >= TC:
             tc_accumulator = 0.0
-            snap = capture(active, current_time)
+            snap = capture(active, current_time, state.env.mainlane_edge)
             requests = build_requests(snap)
             keyed = order_requests(requests)  # Phase A: 全要求車の鍵を計算し EDF（dist昇順）にソート
             assignments = arbitrate(keyed, snap)  # Phase B: 鍵順に提供車を占有印つきで確保
@@ -179,9 +181,9 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
     for veh in state.vehicles:
         if veh.params.id not in running_list:
             continue
-        if veh.params.route == PASS_ROUTE:
+        if veh.params.target_lane is None:  # 必須LCなし（through）
             stats.calculate_vehicle_average_speed("r_pass", veh.params.speed_history)
-        elif veh.params.route == EXIT_ROUTE:
+        else:  # 必須LC車
             stats.calculate_vehicle_average_speed("r_exit", veh.params.speed_history)
             if veh.params.pos_x is not None:
                 r_exit_running[veh.params.id] = veh.params.pos_x
@@ -198,7 +200,7 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
     print(f"Phase B: Tc rounds with double-assigned providers (should be 0): {double_assign_events}")
     print(f"Layer2: total instant lane changes executed: {total_lc}")
     total_collisions, total_involved = _print_collision_summary(state)
-    _write_tail_csv(inflow_pass, inflow_exit, seed, tail_position_list)
+    _write_tail_csv(state.env.name, state.inflow_through, state.inflow_mlc, seed, tail_position_list)
 
     results = {
         "total_generated_vehicle": state.veh_id,
@@ -216,33 +218,33 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
         "total_vehicles_involved": total_involved,
         "max_tail_position": max_tail_position,
     }
-    stats.add_result(state.simulation_time, seed, inflow_pass, inflow_exit, results)
+    stats.add_result(state.simulation_time, seed, state.inflow_through, state.inflow_mlc, results)
     traci.close()
 
 
 def _accumulate_exit_stats(
     veh: V2CAV, stats: SimulationStatistics, r_pass_exited: list[str], r_exit_exited: list[str]
 ) -> None:
-    """範囲外に出た車両の走行時間・平均速度を統計に加算する。"""
+    """範囲外に出た車両の走行時間・平均速度を統計に加算する（through=r_pass バケツ／必須LC車=r_exit バケツ）。"""
     p = veh.params
-    if p.route == PASS_ROUTE:
+    if p.target_lane is None:  # 必須LCなし（through）
         if p.departure_time is not None and p.arrival_time is not None:
             stats.calculate_travel_time("r_pass", p.departure_time, p.arrival_time)
         stats.calculate_vehicle_average_speed("r_pass", p.speed_history)
         r_pass_exited.append(p.id)
-    elif p.route == EXIT_ROUTE:
+    else:  # 必須LC車
         if p.departure_time is not None and p.arrival_time is not None:
             stats.calculate_travel_time("r_exit", p.departure_time, p.arrival_time)
         stats.calculate_vehicle_average_speed("r_exit", p.speed_history)
         r_exit_exited.append(p.id)
 
 
-def _update_activation(veh: V2CAV) -> None:
+def _update_activation(veh: V2CAV, mainlane_edge: str) -> None:
     """必須LC要求の活性化窓に初めて入った時刻を記録する（早め固定活性化、一度だけ）。"""
     p = veh.params
     if p.activated:
         return
-    if in_activation_window(p.road, p.route, p.lane, p.lane_pos):
+    if in_activation_window(mainlane_edge, p.road, p.target_lane, p.deadline_pos, p.lane, p.lane_pos):
         p.activated = True
         p.activation_time = p.sim_time
 
@@ -285,19 +287,22 @@ def _log_assignments(sim_time: float, keyed: list[tuple[Key, LCRequest]], assign
         print(f"    veh={r.veh_id} dist={key[0]:.1f} k={r.remaining_k} <- provider={amap.get(r.veh_id, '-')}")
 
 
-def _set_environment(state: V2SimulationState, inflow_pass: int, inflow_exit: int) -> None:
-    """流入時刻を乱数で決定（seed で決定的）。"""
-    k_pass = int((state.simulation_time / 3600) * inflow_pass)
-    k_exit = int((state.simulation_time / 3600) * inflow_exit)
+def _set_environment(state: V2SimulationState, total_inflow: float, mlc_ratio: float) -> None:
+    """環境のグループ別流入量（総流入 Q × 必須LC比率 f から展開）に従い、流入時刻を乱数で決定（seed で決定的）。
 
-    state.depart_time_pass = sorted(random.sample(range(int(state.simulation_time)), k_pass))
-    state.depart_time_exit = sorted(random.sample(range(int(state.simulation_time)), k_exit))
-    # 1秒以上間隔を確保（同一stepへの偏りを避ける）
-    state.depart_time_pass = [round(n, 1) + 0.1 for n in state.depart_time_pass]
-    state.depart_time_exit = [round(n, 1) + 0.1 for n in state.depart_time_exit]
-
-    print("depart_time_pass:", state.depart_time_pass)
-    print("depart_time_exit:", state.depart_time_exit)
+    グループ定義順に random.sample を呼ぶことで決定性を保つ（分流D では through→exiting＝旧 pass→exit と一致）。
+    """
+    for group, rate in state.env.group_rates(total_inflow, mlc_ratio):
+        k = int((state.simulation_time / 3600) * rate)
+        seconds = sorted(random.sample(range(int(state.simulation_time)), k))
+        # 1秒以上間隔を確保（同一stepへの偏りを避ける）
+        times: list[float] = [round(n, 1) + 0.1 for n in seconds]
+        state.group_depart_times.append((group, times))
+        if group.target_lane is not None:
+            state.inflow_mlc += int(rate)
+        else:
+            state.inflow_through += int(rate)
+        print(f"depart_times[{group.name}]:", times)
 
 
 def _get_depart_lane(state: V2SimulationState, edge_id: str) -> str:
@@ -314,21 +319,22 @@ def _get_depart_lane(state: V2SimulationState, edge_id: str) -> str:
 
 
 def _add_vehicle(state: V2SimulationState) -> None:
-    """流入時刻に到達した車両を SUMO に追加し V2CAV を生成する。"""
+    """流入時刻に到達した車両を SUMO に追加し V2CAV を生成する。各車は環境のグループから必須LC仕様を受け取る。"""
     sumo_time = get_sim_time()
-    for route_id, depart_times in (("r_pass", state.depart_time_pass), ("r_exit", state.depart_time_exit)):
+    for group, depart_times in state.group_depart_times:
         if sumo_time not in depart_times:
             continue
-        depart_lane = _get_depart_lane(state, MAINLANE_EDGE)
+        depart_edge = group.depart_edge if group.depart_edge is not None else state.env.mainlane_edge
+        depart_lane = _get_depart_lane(state, depart_edge)
         traci.vehicle.add(
             vehID=str(state.veh_id),
-            routeID=route_id,
+            routeID=group.route,
             typeID="CAV",
             departLane=depart_lane,
             departPos="base",
             departSpeed="last",
         )
-        state.vehicles.append(V2CAV(state.veh_id))
+        state.vehicles.append(V2CAV(state.veh_id, target_lane=group.target_lane, deadline_pos=group.deadline_pos))
         state.lane_queues[depart_lane].append(str(state.veh_id))
         state.veh_id += 1
 
@@ -341,15 +347,15 @@ def _update_lane_queue(state: V2SimulationState, veh_id: str) -> None:
             return
 
 
-def _get_congestion_point() -> float:
-    """Lane2 で連続 MIN_CONGESTED_VEHICLES 台が低速なら、その末尾位置を渋滞末尾とみなす。"""
-    lane2_vehicles = get_lane_last_step_veh_ids(f"{MAINLANE_EDGE}_2")
+def _get_congestion_point(env: Environment) -> float:
+    """目標車線で連続 MIN_CONGESTED_VEHICLES 台が低速なら、その末尾位置を渋滞末尾とみなす（tail 指標用）。"""
+    lane2_vehicles = get_lane_last_step_veh_ids(f"{env.mainlane_edge}_2")
     if len(lane2_vehicles) < MIN_CONGESTED_VEHICLES:
-        return float(MAINLANE_LENGTH)
+        return env.mainlane_length
 
     sorted_vehicles = sorted(lane2_vehicles, key=get_veh_lane_position, reverse=True)
     congested_sequence: list[str] = []
-    tail_position = float(MAINLANE_LENGTH)
+    tail_position = env.mainlane_length
     for vid in sorted_vehicles:
         if get_veh_speed(vid) <= CONGESTION_SPEED:
             congested_sequence.append(vid)
@@ -406,9 +412,9 @@ def _print_collision_summary(state: V2SimulationState) -> tuple[int, int]:
 
 
 def _write_tail_csv(
-    inflow_pass: int, inflow_exit: int, seed: str, tail_position_list: list[tuple[float, float]]
+    env_name: str, inflow_through: int, inflow_mlc: int, seed: str, tail_position_list: list[tuple[float, float]]
 ) -> None:
-    tail_csv = f"{OUTPUT_DIR}/tail_positions_pass{inflow_pass}_exit{inflow_exit}_seed{seed}.csv"
+    tail_csv = f"{OUTPUT_DIR}/tail_positions_{env_name}_through{inflow_through}_mlc{inflow_mlc}_seed{seed}.csv"
     with open(tail_csv, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["time", "tail_position"])

@@ -1,8 +1,12 @@
 """v2 エントリポイント（EDF統一調停・自己完結パッケージ）。
 
-実行: ``cd TraCI && uv run python -m v2 <seed> <inflow_pass> <inflow_exit> [--nogui]``
-（v2 一式は TraCI/v2/ パッケージに集約。本ファイルは ``python -m v2`` で実行される __main__）。
-引数規約は既存の custom.py / default.py と同じ。結果は simulationStatistics/statistics/v2/ に出力。
+実行: ``cd TraCI && uv run python -m v2 <seed> <inflow> <mlc_ratio> [--env NAME] [--nogui]``
+- ``inflow``    : 総流入量 Q [veh/h]
+- ``mlc_ratio`` : 必須LC車の比率 f（0..1）
+- ``--env``     : 評価環境名（既定 diverge＝分流D）。環境を変えると net・必須LC仕様が切り替わる。
+
+環境（形状）と負荷（Q・f）を分離しており、env を変えるだけで同じ Q,f を別シナリオに適用できる。
+結果は simulationStatistics/statistics/v2/ に出力。
 """
 
 import optparse
@@ -21,44 +25,45 @@ else:
 from sumolib import checkBinary
 import traci
 
+from v2.environment import ENVIRONMENTS
 from v2.simulation_state import OUTPUT_DIR, V2SimulationState, run
 
 SIMULATION_TIME: float = 600.0  # シミュレーション時間[s]
 
 
-def _start_sim(sumo_binary: str) -> None:
-    traci.start([sumo_binary, "-c", "../config/high-way.sumocfg"])
+def _start_sim(sumo_binary: str, sumocfg: str) -> None:
+    traci.start([sumo_binary, "-c", sumocfg])
     print("Simulation started")
 
 
-def _get_options() -> optparse.Values:
-    parser = optparse.OptionParser()
-    parser.add_option(
-        "--nogui",
-        action="store_true",
-        default=False,
-        help="run the commandline version of sumo",
-    )
-    options, _ = parser.parse_args()
-    return options
+def _get_options() -> tuple[optparse.Values, list[str]]:
+    parser = optparse.OptionParser(usage="python -m v2 <seed> <inflow> <mlc_ratio> [--env NAME] [--nogui]")
+    parser.add_option("--env", dest="env", default="diverge", help="evaluation environment name (default: diverge)")
+    parser.add_option("--nogui", action="store_true", default=False, help="run the commandline version of sumo")
+    return parser.parse_args()
 
 
-def _create_file_name(inflow_pass: int, inflow_exit: int, seed: str) -> str:
-    return f"v2_pass{inflow_pass}_exit{inflow_exit}_seed{seed}"
+def _create_file_name(env_name: str, total_inflow: float, mlc_ratio: float, seed: str) -> str:
+    return f"v2_{env_name}_inflow{int(total_inflow)}_mlc{mlc_ratio}_seed{seed}"
 
 
 if __name__ == "__main__":
-    options = _get_options()
-    args = sys.argv
-    seed = args[1]  # 乱数シード
+    options, positional = _get_options()
+    if len(positional) < 3:
+        sys.exit("usage: python -m v2 <seed> <inflow> <mlc_ratio> [--env NAME] [--nogui]")
+    seed = positional[0]  # 乱数シード
     random.seed(seed)
-    inflow_pass = int(args[2])  # pass側車両流入数
-    inflow_exit = int(args[3])  # exit側車両流入数
+    total_inflow = float(positional[1])  # 総流入量 Q [veh/h]
+    mlc_ratio = float(positional[2])  # 必須LC車の比率 f（0..1）
 
-    filename = _create_file_name(inflow_pass, inflow_exit, seed)
+    env = ENVIRONMENTS.get(options.env)
+    if env is None:
+        sys.exit(f"unknown env '{options.env}'. available: {', '.join(ENVIRONMENTS)}")
+
+    filename = _create_file_name(env.name, total_inflow, mlc_ratio, seed)
     stats = SimulationStatistics(filename=filename, output_dir=OUTPUT_DIR)
 
     sumo_binary = checkBinary("sumo" if options.nogui else "sumo-gui")
-    _start_sim(sumo_binary)
-    state = V2SimulationState(SIMULATION_TIME)
-    run(state, inflow_pass, inflow_exit, stats, seed)
+    _start_sim(sumo_binary, env.sumocfg)
+    state = V2SimulationState(SIMULATION_TIME, env)
+    run(state, total_inflow, mlc_ratio, stats, seed)

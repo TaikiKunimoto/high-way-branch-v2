@@ -47,7 +47,10 @@ class V2CAVParams(BaseModel):
 
     id: str
     type_id: str | None = None
-    route: str | None = None
+    route: str | None = None  # SUMO ルート（net を通すための経路。機構は参照しない）
+    # 必須LC仕様（環境が生成時に与える）。target_lane=None なら必須LCなし（through 車）。
+    target_lane: int | None = None
+    deadline_pos: float | None = None
     road: str | None = None
     lane_id: str | None = None
     lane: int | None = None
@@ -80,13 +83,15 @@ class V2CAV:
 
     params: V2CAVParams
 
-    def __init__(self, veh_id: int) -> None:
+    def __init__(self, veh_id: int, target_lane: int | None = None, deadline_pos: float | None = None) -> None:
         vid = str(veh_id)
         self.params = V2CAVParams(
             id=vid,
             type_id=get_veh_type(vid),
             route=get_veh_route_id(vid),
             lane_id=get_veh_lane_id(vid),
+            target_lane=target_lane,  # 環境が定める必須LC仕様（route 名には依存しない）
+            deadline_pos=deadline_pos,
         )
         # SUMO の自律車線変更を無効化（車線変更は traci.changeLane のみ）。速度も traci で管理し、
         # 提供車の協調減速など制御介入を可能にする。
