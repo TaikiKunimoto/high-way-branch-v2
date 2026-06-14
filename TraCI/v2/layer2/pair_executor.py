@@ -8,9 +8,9 @@ import os
 import sys
 
 from v2.constants import MAX_DECEL, MAX_SPEED, MIN_GAP
+from v2.layer1.rsu import Assignment
+from v2.layer2.safety import VEH_LENGTH, Safety
 from v2.lc_request import LCRequest
-from v2.rsu import Assignment
-from v2.safety import VEH_LENGTH, Safety
 from v2.snapshot import Snapshot
 from v2.v2_cav import V2CAV
 

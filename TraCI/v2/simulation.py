@@ -26,11 +26,11 @@ from v2.constants import (
     TIME_STEP,
 )
 from v2.environment import Environment, Group
+from v2.layer1.priority import EDF
+from v2.layer1.rsu import RSU, Assignment
+from v2.layer2.pair_executor import Layer2
 from v2.lc_request import LCRequest
 from v2.obstacle import Obstacle
-from v2.pair_executor import Layer2
-from v2.priority import EDF
-from v2.rsu import RSU, Assignment
 from v2.snapshot import Snapshot
 from v2.v2_cav import V2CAV
 
