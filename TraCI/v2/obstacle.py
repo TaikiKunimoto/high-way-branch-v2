@@ -1,0 +1,98 @@
+"""突発障害物（Obstacle）: 走行中の1台を停止させてブロック車両＝障害物にするシナリオイベント。
+
+形状（Environment）非依存で、どの環境にも ``--obstacle 'lane,pos,time'`` で動的に付与できる。
+配置（place）は「位置到達トリガ」: 指定レーンで pos に到達した最初の車を停止させ、lane も pos も指定どおりに再現する。
+配置後は escalate で、障害物より後方・同一レーンの through 車に隣レーンへの回避（必須LC）を動的付与する。
+"""
+
+from typing import TYPE_CHECKING
+
+from pydantic import BaseModel, ConfigDict
+
+if TYPE_CHECKING:
+    from v2.v2_cav import V2CAV
+
+
+class Obstacle(BaseModel):
+    """突発障害物のパラメータと振る舞い（パース・検証・配置・エスカレーション）。"""
+
+    model_config = ConfigDict(frozen=True)
+
+    lane: int  # 障害物を発生させる本線レーン index（0=最下段）
+    pos: float  # 障害物の位置 [m]（mainlane_edge 始端からの距離）
+    appear_time: float  # 突発時刻 [s]（この時刻以降、指定レーンで pos に到達した最初の車を停止＝障害物化）
+
+    @classmethod
+    def from_spec(cls, spec: str) -> "Obstacle":
+        """``'lane,pos,time'`` をパースする。要素数・数値が不正なら受け取った値つきで ValueError を投げる。"""
+        parts = spec.split(",")
+        if len(parts) != 3:
+            raise ValueError(f"--obstacle は 'lane,pos,time' の3値で指定してください（受け取り: {spec!r}）")
+        lane_s, pos_s, time_s = parts
+        try:
+            return cls(lane=int(lane_s), pos=float(pos_s), appear_time=float(time_s))
+        except ValueError as e:
+            raise ValueError(f"--obstacle の数値変換に失敗（lane=整数, pos/time=実数）: {spec!r}") from e
+
+    def validate_for(self, mainlane_edge: str, num_lanes: int, mainlane_length: float) -> None:
+        """環境に対してレーンindex・位置の範囲を検証する。範囲外なら受け取った値つきで ValueError を投げる。
+
+        （メソッド名 validate は pydantic BaseModel の予約と紛れるため validate_for とする）
+        """
+        if not 0 <= self.lane < num_lanes:
+            raise ValueError(
+                f"--obstacle のレーン番号が範囲外です（{mainlane_edge} のレーン数={num_lanes}, "
+                f"指定可能 0..{num_lanes - 1}, 受け取り: {self.lane}）"
+            )
+        if not 0.0 < self.pos < mainlane_length:
+            raise ValueError(
+                f"--obstacle の位置が範囲外です（{mainlane_edge} の長さ={mainlane_length}m, "
+                f"指定可能 0..{mainlane_length}, 受け取り: {self.pos}）"
+            )
+
+    def place(self, active: "list[V2CAV]", edge: str, watched_id: str | None) -> tuple[str | None, float | None]:
+        """指定レーンで pos に到達した最初の車を停止＝障害物にする（位置到達トリガ）。
+
+        pos 手前の先頭車を1台監視し、その車が pos に到達(lane_pos>=pos)した瞬間に停止させることで、
+        lane も pos も指定どおりに再現する（毎step ポーリングのため停止位置は pos+1step分 ≒ pos）。
+        まだ到達していなければ停止せず、次stepで再試行する。監視車が pos 到達前にレーンを抜けた／退出した
+        場合は監視を解除して選び直す。戻り値: (監視中の車ID, 停止位置)。停止できていなければ停止位置は None。
+        """
+        # 指定 edge・指定レーンを走行中の CAV（障害物化済みは除く）。lane_pos でアクセスするので None は除外
+        in_lane = [
+            v
+            for v in active
+            if v.road == edge and v.lane == self.lane and v.lane_pos is not None and not v.is_obstacle
+        ]
+        by_id = {v.id: v for v in in_lane}
+
+        # 監視中の車が pos に到達していたら停止＝障害物化
+        watched = by_id.get(watched_id) if watched_id is not None else None
+        if watched is not None and watched.lane_pos is not None and watched.lane_pos >= self.pos:
+            watched.make_obstacle()
+            placed = watched.lane_pos
+            print(f"[obstacle] veh={watched.id} edge={edge} lane={self.lane} pos={placed:.1f}")
+            return watched_id, placed
+
+        # 監視対象を（再）選定: pos 手前で最も pos に近い先頭車。手前に1台もいなければ未選定のまま待機する
+        approaching = [v for v in in_lane if v.lane_pos is not None and v.lane_pos < self.pos]
+        if approaching:
+            lead = max(approaching, key=lambda v: (v.lane_pos or 0.0, -int(v.id)))
+            return lead.id, None
+        return None, None
+
+    def escalate(self, active: "list[V2CAV]", edge: str, obstacle_pos: float, num_lanes: int) -> None:
+        """障害物より後方・同一レーンの必須LCなし車に、隣の空きレーンへの回避を動的付与する（エスカレーション）。"""
+        for veh in active:
+            if veh.is_obstacle or veh.road != edge or veh.lane != self.lane or veh.lane_pos is None:
+                continue
+            if veh.lane_pos >= obstacle_pos or veh.target_lane is not None:
+                continue  # 障害物より前、または既に必須LCを持つ車（合流/分流）は対象外
+            down_ok = self.lane - 1 >= 0
+            up_ok = self.lane + 1 < num_lanes
+            # TODO: 適切な振り分けアルゴリズムを考案する
+            if down_ok and up_ok:
+                veh.target_lane = self.lane - 1 if int(veh.id) % 2 == 0 else self.lane + 1  # id偶奇で左右に振り分け
+            else:
+                veh.target_lane = self.lane - 1 if down_ok else self.lane + 1
+            veh.deadline_pos = obstacle_pos

@@ -7,16 +7,18 @@
 ``mainlane_edge`` を持たせることで、下流（rsu/safety/lc_request）は環境を意識せず本線 edge を引ける。
 """
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:
     from v2.v2_cav import V2CAV
 
 
-@dataclass(frozen=True)
-class VehObs:
+class VehObs(BaseModel):
     """1車両の観測値（S_t での凍結値）。"""
+
+    model_config = ConfigDict(frozen=True)
 
     veh_id: str
     target_lane: int | None  # 必須LC の目標レーン（None=必須LCなし）
@@ -29,29 +31,40 @@ class VehObs:
     is_obstacle: bool  # 障害物（停止車両）。安全判定では回避対象だが、提供車には選ばない
 
 
-@dataclass(frozen=True)
-class Snapshot:
+class Snapshot(BaseModel):
+    """ある時刻 S_t の全車観測の凍結＋本線の車線別 縦位置降順インデックス。"""
+
+    model_config = ConfigDict(frozen=True)
+
     sim_time: float
     mainlane_edge: str  # 本線 edge（lane_members のキー・活性化窓判定の基準）
     obs: dict[str, VehObs]
     lane_members: dict[str, list[str]]  # lane_id -> 縦位置降順の車両idリスト
 
+    @staticmethod
+    def _lane_pos_or_zero(o: VehObs) -> float:
+        """縦位置を取り出す（未観測 None は 0.0 とみなしソートキーに使う）。"""
+        return o.lane_pos if o.lane_pos is not None else 0.0
 
-def _lane_pos_or_zero(o: VehObs) -> float:
-    return o.lane_pos if o.lane_pos is not None else 0.0
-
-
-def capture(vehicles: "list[V2CAV]", sim_time: float, mainlane_edge: str) -> Snapshot:
-    """走行中の全車両の観測値を凍結し、本線 edge の車線別 縦位置降順インデックスを作る。"""
-    obs: dict[str, VehObs] = {}
-    lane_members: dict[str, list[str]] = {}
-    for veh in vehicles:
-        p = veh.params
-        obs[p.id] = VehObs(
-            p.id, p.target_lane, p.deadline_pos, p.road, p.lane, p.lane_pos, p.speed, p.activation_time, p.is_obstacle
-        )
-        if p.road == mainlane_edge and p.lane is not None:
-            lane_members.setdefault(f"{p.road}_{p.lane}", []).append(p.id)
-    for ids in lane_members.values():
-        ids.sort(key=lambda i: _lane_pos_or_zero(obs[i]), reverse=True)
-    return Snapshot(sim_time, mainlane_edge, obs, lane_members)
+    @classmethod
+    def capture(cls, vehicles: "list[V2CAV]", sim_time: float, mainlane_edge: str) -> "Snapshot":
+        """走行中の全車両の観測値を凍結し、本線 edge の車線別 縦位置降順インデックスを作る。"""
+        obs: dict[str, VehObs] = {}
+        lane_members: dict[str, list[str]] = {}
+        for veh in vehicles:
+            obs[veh.id] = VehObs(
+                veh_id=veh.id,
+                target_lane=veh.target_lane,
+                deadline_pos=veh.deadline_pos,
+                road=veh.road,
+                lane=veh.lane,
+                lane_pos=veh.lane_pos,
+                speed=veh.speed,
+                activation_time=veh.activation_time,
+                is_obstacle=veh.is_obstacle,
+            )
+            if veh.road == mainlane_edge and veh.lane is not None:
+                lane_members.setdefault(f"{veh.road}_{veh.lane}", []).append(veh.id)
+        for ids in lane_members.values():
+            ids.sort(key=lambda i: cls._lane_pos_or_zero(obs[i]), reverse=True)
+        return cls(sim_time=sim_time, mainlane_edge=mainlane_edge, obs=obs, lane_members=lane_members)

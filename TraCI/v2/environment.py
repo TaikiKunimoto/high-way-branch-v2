@@ -8,12 +8,13 @@
 現状 net が存在するのは環境①（分流D）のみ。
 """
 
-from dataclasses import dataclass
+from pydantic import BaseModel, ConfigDict
 
 
-@dataclass(frozen=True)
-class Group:
+class Group(BaseModel):
     """車両グループ。必須LC車は target_lane/deadline_pos を持ち、through 車（必須LCなし）は None。"""
+
+    model_config = ConfigDict(frozen=True)
 
     name: str
     route: str  # SUMO ルート id（net を通すための経路。機構は参照しない）
@@ -24,9 +25,10 @@ class Group:
     depart_lanes: tuple[int, ...] | None = None  # 投入レーン候補（None=投入edgeの全レーン）
 
 
-@dataclass(frozen=True)
-class Environment:
+class Environment(BaseModel):
     """1シナリオの固定構造。負荷（総流入 Q・必須LC比率 f）は実行時パラメータで与える。"""
+
+    model_config = ConfigDict(frozen=True)
 
     name: str
     sumocfg: str  # config パス（cwd=TraCI からの相対）

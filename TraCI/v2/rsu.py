@@ -9,62 +9,112 @@
 - 要求車が停車中（speed=0）は2番目に近い候補を選ぶ（先頭直後に詰まるのを避ける既存例外）。
 """
 
-from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from status.status import CarAction
+from pydantic import BaseModel, ConfigDict
+
+from status.status import CarAction, CarStatus
 from v2.lc_request import LCRequest
 from v2.priority import Key
 from v2.snapshot import Snapshot
 
+if TYPE_CHECKING:
+    from v2.v2_cav import V2CAV
 
-@dataclass(frozen=True)
-class Assignment:
+
+class Assignment(BaseModel):
+    """1組の割当（要求車 ← 提供車）。"""
+
+    model_config = ConfigDict(frozen=True)
+
     requester_id: str
     provider_id: str
 
 
-def arbitrate(keyed: list[tuple[Key, LCRequest]], snap: Snapshot) -> list[Assignment]:
-    """Phase B。鍵昇順（dist小から）に提供車を占有印つきで確保し、割当のリストを返す。"""
-    request_key: dict[str, Key] = {req.veh_id: key for key, req in keyed}
-    claimed: set[str] = set()
-    assignments: list[Assignment] = []
-    for key, req in keyed:
-        if req.veh_id in claimed:
-            # 既に上位車の提供車として確保済み → 今Tc は譲る側。自分のLCは見送る（譲歩の伝播）
-            continue
-        provider = _find_provider(req, key, snap, claimed, request_key)
-        if provider is not None:
-            claimed.add(provider)  # 占有印（横取り禁止）
-            assignments.append(Assignment(req.veh_id, provider))
-        # provider が無い＝譲れる枠なし（今Tc は割当なし。次Tc 再試行）
-    return assignments
+class RSU:
+    """Layer1（路側機）：Phase B の鍵順 提供車割当を行う（状態を持たない静的ロジック）。"""
 
+    @staticmethod
+    def arbitrate(keyed: list[tuple[Key, LCRequest]], snap: Snapshot) -> list[Assignment]:
+        """Phase B。鍵昇順（dist小から）に提供車を占有印つきで確保し、割当のリストを返す。"""
+        request_key: dict[str, Key] = {req.veh_id: key for key, req in keyed}
+        claimed: set[str] = set()
+        assignments: list[Assignment] = []
+        for key, req in keyed:
+            if req.veh_id in claimed:
+                # 既に上位車の提供車として確保済み → 今Tc は譲る側。自分のLCは見送る（譲歩の伝播）
+                continue
+            provider = RSU._find_provider(req, key, snap, claimed, request_key)
+            if provider is not None:
+                claimed.add(provider)  # 占有印（横取り禁止）
+                assignments.append(Assignment(requester_id=req.veh_id, provider_id=provider))
+            # provider が無い＝譲れる枠なし（今Tc は割当なし。次Tc 再試行）
+        return assignments
 
-def _find_provider(
-    req: LCRequest, my_key: Key, snap: Snapshot, claimed: set[str], request_key: dict[str, Key]
-) -> str | None:
-    """次の1段LCの目標車線の後続から、鍵劣位かつ未占有の最近傍（停車中は2番目）を選ぶ。"""
-    step = 1 if req.direction == CarAction.CHANGE_LEFT else -1
-    next_lane = req.current_lane + step
-    members = snap.lane_members.get(f"{snap.mainlane_edge}_{next_lane}", [])  # 縦位置降順
+    @staticmethod
+    def _find_provider(
+        req: LCRequest, my_key: Key, snap: Snapshot, claimed: set[str], request_key: dict[str, Key]
+    ) -> str | None:
+        """次の1段LCの目標車線の後続から、鍵劣位かつ未占有の最近傍（停車中は2番目）を選ぶ。"""
+        step = 1 if req.direction == CarAction.CHANGE_LEFT else -1
+        next_lane = req.current_lane + step
+        members = snap.lane_members.get(f"{snap.mainlane_edge}_{next_lane}", [])  # 縦位置降順
 
-    viable: list[str] = []
-    for vid in members:
-        o = snap.obs[vid]
-        if o.lane_pos is None or o.lane_pos >= req.current_pos:
-            continue  # 後続（自分より後ろ）のみ
-        if o.is_obstacle:
-            continue  # 障害物（停止車両）は gap を作れないので提供車にしない
-        if vid in claimed:
-            continue  # 占有印（横取り禁止）
-        other_key = request_key.get(vid)
-        if other_key is not None and other_key < my_key:
-            continue  # 相手が自分より緊急（鍵上位）→ 譲ってもらえない。要求なし車は常に譲れる
-        viable.append(vid)
+        viable: list[str] = []
+        for vid in members:
+            o = snap.obs[vid]
+            if o.lane_pos is None or o.lane_pos >= req.current_pos:
+                continue  # 後続（自分より後ろ）のみ
+            if o.is_obstacle:
+                continue  # 障害物（停止車両）は gap を作れないので提供車にしない
+            if vid in claimed:
+                continue  # 占有印（横取り禁止）
+            other_key = request_key.get(vid)
+            if other_key is not None and other_key < my_key:
+                continue  # 相手が自分より緊急（鍵上位）→ 譲ってもらえない。要求なし車は常に譲れる
+            viable.append(vid)
 
-    if not viable:
-        return None
-    # members は縦位置降順なので viable も降順（先頭＝最近傍）
-    if snap.obs[req.veh_id].speed != 0:
-        return viable[0]
-    return viable[1] if len(viable) > 1 else None
+        if not viable:
+            return None
+        # members は縦位置降順なので viable も降順（先頭＝最近傍）
+        if snap.obs[req.veh_id].speed != 0:
+            return viable[0]
+        return viable[1] if len(viable) > 1 else None
+
+    @staticmethod
+    def apply_roles(active: "list[V2CAV]", assignments: list[Assignment]) -> None:
+        """毎Tc フル再構築: 全車の役割を NORMAL にリセットしてから割当結果を反映する。"""
+        by_id = {veh.id: veh for veh in active}
+        for veh in active:
+            veh.status = CarStatus.NORMAL
+            veh.providing_to_id = None
+            veh.receiving_from_id = None
+        for a in assignments:
+            requester = by_id.get(a.requester_id)
+            provider = by_id.get(a.provider_id)
+            if requester is None or provider is None:
+                continue
+            requester.status = CarStatus.LANE_CHANGING
+            requester.receiving_from_id = a.provider_id
+            provider.status = CarStatus.YIELDING
+            provider.providing_to_id = a.requester_id
+
+    @staticmethod
+    def keys_unique(keyed: list[tuple[Key, LCRequest]]) -> bool:
+        """鍵がすべて相異なるか（=同点なし）。ID が一意なので常に True のはず（デッドロックフリー）。"""
+        keys = [k for k, _ in keyed]
+        return len(set(keys)) == len(keys)
+
+    @staticmethod
+    def providers_unique(assignments: list[Assignment]) -> bool:
+        """同一提供車が複数の要求車に割り当たっていないか（横取り禁止なら常に True）。"""
+        providers = [a.provider_id for a in assignments]
+        return len(set(providers)) == len(providers)
+
+    @staticmethod
+    def log_assignments(sim_time: float, keyed: list[tuple[Key, LCRequest]], assignments: list[Assignment]) -> None:
+        """Phase A/B の結果（EDF順とどの要求車が提供車を得たか）をログ出力する（B4 の検証用）。"""
+        amap = {a.requester_id: a.provider_id for a in assignments}
+        print(f"[Tc t={sim_time:.1f}] requests={len(keyed)} assigned={len(assignments)}")
+        for key, r in keyed:
+            print(f"    veh={r.veh_id} dist={key[0]:.1f} k={r.remaining_k} <- provider={amap.get(r.veh_id, '-')}")

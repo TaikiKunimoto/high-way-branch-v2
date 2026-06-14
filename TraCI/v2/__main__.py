@@ -26,7 +26,8 @@ from sumolib import checkBinary
 import traci
 
 from v2.environment import ENVIRONMENTS
-from v2.simulation_state import OUTPUT_DIR, V2SimulationState, run
+from v2.obstacle import Obstacle
+from v2.simulation import OUTPUT_DIR, V2Simulation
 
 SIMULATION_TIME: float = 600.0  # シミュレーション時間[s]
 
@@ -48,20 +49,6 @@ def _get_options() -> tuple[optparse.Values, list[str]]:
     )
     parser.add_option("--nogui", action="store_true", default=False, help="run the commandline version of sumo")
     return parser.parse_args()
-
-
-def _parse_obstacle(spec: str | None) -> tuple[int, float, float] | None:
-    """--obstacle 'lane,pos,time' をパースする。任意のどの環境にも掛けられる突発障害物パラメータ。"""
-    if spec is None:
-        return None
-    parts = spec.split(",")
-    if len(parts) != 3:
-        raise ValueError(f"--obstacle は 'lane,pos,time' の3値で指定してください（受け取り: {spec!r}）")
-    lane_s, pos_s, time_s = parts
-    try:
-        return (int(lane_s), float(pos_s), float(time_s))
-    except ValueError as e:
-        raise ValueError(f"--obstacle の数値変換に失敗（lane=整数, pos/time=実数）: {spec!r}") from e
 
 
 def _create_file_name(env_name: str, total_inflow: float, mlc_ratio: float, seed: str) -> str:
@@ -90,9 +77,9 @@ if __name__ == "__main__":
     filename = _create_file_name(env.name, total_inflow, mlc_ratio, seed)
     stats = SimulationStatistics(filename=filename, output_dir=OUTPUT_DIR)
 
-    obstacle = _parse_obstacle(options.obstacle)
+    obstacle = Obstacle.from_spec(options.obstacle) if options.obstacle is not None else None
 
     sumo_binary = checkBinary("sumo" if options.nogui else "sumo-gui")
     _start_sim(sumo_binary, env.sumocfg)
-    state = V2SimulationState(SIMULATION_TIME, env)
-    run(state, total_inflow, mlc_ratio, stats, seed, obstacle)
+    sim = V2Simulation(simulation_time=SIMULATION_TIME, env=env)
+    sim.run(total_inflow, mlc_ratio, stats, seed, obstacle)
