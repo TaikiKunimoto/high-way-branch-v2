@@ -95,7 +95,7 @@ class Obstacle(BaseModel):
             if veh.is_obstacle or veh.road != edge or veh.lane != self.lane or veh.lane_pos is None:
                 continue
             if veh.lane_pos >= obstacle_pos:
-                continue  # 障害物より前
+                continue  # 障害物より前（先）
             if any(op.is_avoidance and op.deadline_pos == obstacle_pos for op in veh.operations):
                 continue  # この障害物の回避操作は付与済み
             avoid_lane = self._avoid_lane(veh, num_lanes)
@@ -104,21 +104,36 @@ class Obstacle(BaseModel):
             veh.operations.append(LCOperation(target_lane=avoid_lane, deadline_pos=obstacle_pos, is_avoidance=True))
 
     def _avoid_lane(self, veh: "V2CAV", num_lanes: int) -> int | None:
-        """障害物レーンからの退避先隣レーン。最終目的地側を優先し、不可なら逆側へ（両隣不可なら None）。"""
-        down, up = self.lane - 1, self.lane + 1
-        down_ok, up_ok = down >= 0, up < num_lanes
+        """障害物レーンからの退避先隣レーン。最終目的地側を優先し、不可なら逆側へ（両隣とも範囲外なら None）。
+
+        レーン index と左右（SUMO 慣習: index 0 が右端、index が増えるほど左。CHANGE_LEFT が index 増加方向）::
+
+            進行方向＝紙面奥
+                  左 (CHANGE_LEFT, index+1)
+            ┌────────┐
+            │ lane N-1 │   index 大 = 左端
+            │   ...    │
+            │ lane 1   │
+            │ lane 0   │   index 0  = 右端（最下段）
+            └────────┘
+                  右 (CHANGE_RIGHT, index-1)
+
+        したがって  right = lane-1（index 小・右） / left = lane+1（index 大・左）。
+        """
+        right, left = self.lane - 1, self.lane + 1
+        right_ok, left_ok = right >= 0, left < num_lanes
         # 最終目的地 = 本来の目標（非回避）操作のうち最も deadline が遠い target_lane（無ければ through 車）
         goals = [op for op in veh.operations if not op.is_avoidance]
         final_target = max(goals, key=lambda op: op.deadline_pos).target_lane if goals else None
         if final_target is not None and final_target > self.lane:
-            prefer, prefer_ok, other, other_ok = up, up_ok, down, down_ok
+            prefer, prefer_ok, other, other_ok = left, left_ok, right, right_ok  # 目的地が左（上）
         elif final_target is not None and final_target < self.lane:
-            prefer, prefer_ok, other, other_ok = down, down_ok, up, up_ok
+            prefer, prefer_ok, other, other_ok = right, right_ok, left, left_ok  # 目的地が右（下）
         else:
             # through 車 or 最終目的地＝障害物レーン: 両側可なら id 偶奇、片側のみならそちら
-            if down_ok and up_ok:
-                return down if int(veh.id) % 2 == 0 else up
-            return down if down_ok else (up if up_ok else None)
+            if right_ok and left_ok:
+                return right if int(veh.id) % 2 == 0 else left
+            return right if right_ok else (left if left_ok else None)
         if prefer_ok:
             return prefer
         return other if other_ok else None  # 本来の方向が不可なら逆側へ一旦退避
