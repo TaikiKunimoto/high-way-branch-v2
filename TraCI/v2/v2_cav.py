@@ -35,7 +35,7 @@ from v2.constants import (
     MIN_GAP,
     REACTION_TIME,
 )
-from v2.lc_request import LCRequest
+from v2.lc_request import LCOperation, LCRequest
 
 if TYPE_CHECKING:
     from simulationStatistics.simulation_statistics import SimulationStatistics
@@ -58,9 +58,9 @@ class V2CAV(BaseModel):
     id: str
     type_id: str | None = None
     route: str | None = None  # SUMO ルート（net を通すための経路。機構は参照しない）
-    # 必須LC仕様（環境が生成時に与える / 障害物エスカレーションで動的付与）。target_lane=None なら必須LCなし。
-    target_lane: int | None = None
-    deadline_pos: float | None = None
+    # 必須LC操作（環境が生成時に与える / 障害物エスカレーションで append）。空なら必須LCなし(through)。
+    # 未達成(lane!=target)のうち最も deadline が近いものが active_operation（要求を出す対象）。
+    operations: list[LCOperation] = Field(default_factory=list)
     # 障害物（突発）: True の車は停止し続け、調停（要求・提供）から除外される。snapshot には載る（安全判定で回避）。
     is_obstacle: bool = False
     road: str | None = None
@@ -80,9 +80,6 @@ class V2CAV(BaseModel):
     # Layer1 調停の役割（毎Tc フル再構築）。提供車↔要求車の対応を保持する。
     providing_to_id: str | None = None  # 自分が gap を提供している相手（要求車）
     receiving_from_id: str | None = None  # 自分に gap を提供してくれる相手（提供車）
-    # 必須LC要求の活性化（早め固定活性化）。活性化窓に初めて入った時刻を一度だけ記録する。
-    activation_time: float | None = None
-    activated: bool = False
     sim_time: float = 0.0
     departure_time: float | None = None
     arrival_time: float | None = None
@@ -117,21 +114,28 @@ class V2CAV(BaseModel):
             stats.calculate_travel_time("", self.departure_time, self.arrival_time)
         stats.calculate_vehicle_average_speed("", self.speed_history)
 
+    def active_operation(self) -> LCOperation | None:
+        """未完了（is_done が False）の操作のうち、最も deadline が近いものを返す（なければ None）。"""
+        pending = [op for op in self.operations if not op.is_done(self.lane, self.lane_pos)]
+        if not pending:
+            return None
+        return min(pending, key=lambda op: op.deadline_pos)
+
     def update_activation(self, mainlane_edge: str) -> None:
-        """必須LC要求の活性化窓に初めて入った時刻を記録する（早め固定活性化、一度だけ）。"""
-        if self.activated:
-            return
-        if LCRequest.in_activation_window(
-            mainlane_edge, self.road, self.target_lane, self.deadline_pos, self.lane, self.lane_pos
-        ):
-            self.activated = True
-            self.activation_time = self.sim_time
+        """各未達成操作が活性化窓に初めて入った時刻を記録する（早め固定活性化、操作ごとに一度だけ）。"""
+        for op in self.operations:
+            if op.activated:
+                continue
+            if LCRequest.in_activation_window(
+                mainlane_edge, self.road, op.target_lane, op.deadline_pos, self.lane, self.lane_pos
+            ):
+                op.activated = True
+                op.activation_time = self.sim_time
 
     def make_obstacle(self) -> None:
-        """この車を障害物（突発）にする。停止し、必須LC要求を持たず、調停から外れる。"""
+        """この車を障害物（突発）にする。停止し、必須LC操作を捨てて調停から外れる。"""
         self.is_obstacle = True
-        self.target_lane = None
-        self.deadline_pos = None
+        self.operations.clear()
         traci.vehicle.setSpeed(self.id, 0.0)
 
     # --- 状態観測 ---

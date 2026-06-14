@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict
 
+from v2.lc_request import LCOperation
+
 if TYPE_CHECKING:
     from v2.v2_cav import V2CAV
 
@@ -82,17 +84,58 @@ class Obstacle(BaseModel):
         return None, None
 
     def escalate(self, active: "list[V2CAV]", edge: str, obstacle_pos: float, num_lanes: int) -> None:
-        """障害物より後方・同一レーンの必須LCなし車に、隣の空きレーンへの回避を動的付与する（エスカレーション）。"""
+        """障害物より後方・同一レーンの車に、隣レーンへの回避操作（is_avoidance）を append する（through も既存MLC車も）。
+
+        回避先は「最終目的地に近い方向」の隣レーン、不可なら逆側へ一旦退避。元の必須LC操作は上書きせず保持され、
+        回避操作（deadline=obstacle_pos）が deadline 最短で先に処理される。回避操作は「障害物を通過したら完了」
+        なので退避レーンに保持され、通過後に元の操作が再アクティブになって最終目的地へ復帰する（最終目的地が
+        障害物レーンの場合も一旦退避→通過後に戻る）。毎step呼ばれるため、付与済みの車は skip（重複防止）。
+        """
         for veh in active:
             if veh.is_obstacle or veh.road != edge or veh.lane != self.lane or veh.lane_pos is None:
                 continue
-            if veh.lane_pos >= obstacle_pos or veh.target_lane is not None:
-                continue  # 障害物より前、または既に必須LCを持つ車（合流/分流）は対象外
-            down_ok = self.lane - 1 >= 0
-            up_ok = self.lane + 1 < num_lanes
-            # TODO: 適切な振り分けアルゴリズムを考案する
-            if down_ok and up_ok:
-                veh.target_lane = self.lane - 1 if int(veh.id) % 2 == 0 else self.lane + 1  # id偶奇で左右に振り分け
-            else:
-                veh.target_lane = self.lane - 1 if down_ok else self.lane + 1
-            veh.deadline_pos = obstacle_pos
+            if veh.lane_pos >= obstacle_pos:
+                continue  # 障害物より前（先）
+            if any(op.is_avoidance and op.deadline_pos == obstacle_pos for op in veh.operations):
+                continue  # この障害物の回避操作は付与済み
+            avoid_lane = self._avoid_lane(veh, num_lanes)
+            if avoid_lane is None:
+                continue  # 両隣とも範囲外（＝退避先なし）＝待機
+            veh.operations.append(LCOperation(target_lane=avoid_lane, deadline_pos=obstacle_pos, is_avoidance=True))
+
+    def _avoid_lane(self, veh: "V2CAV", num_lanes: int) -> int | None:
+        """障害物レーンからの退避先隣レーン。最終目的地側を優先し、不可なら逆側へ（両隣とも範囲外なら None）。
+
+        レーン index と左右（SUMO 慣習: index 0 が右端、index が増えるほど左。CHANGE_LEFT が index 増加方向）::
+
+            進行方向＝紙面奥
+                  左 (CHANGE_LEFT, index+1)
+            ┌────────┐
+            │ lane N-1 │   index 大 = 左端
+            │   ...    │
+            │ lane 1   │
+            │ lane 0   │   index 0  = 右端（最下段）
+            └────────┘
+                  右 (CHANGE_RIGHT, index-1)
+
+        したがって  right = lane-1（index 小・右） / left = lane+1（index 大・左）。
+        """
+        right = self.lane - 1
+        left = self.lane + 1
+        right_ok = right >= 0
+        left_ok = left < num_lanes
+        # 最終目的地 = 本来の目標（非回避）操作のうち最も deadline が遠い target_lane（無ければ through 車）
+        goals = [op for op in veh.operations if not op.is_avoidance]
+        final_target = max(goals, key=lambda op: op.deadline_pos).target_lane if goals else None
+        if final_target is not None and final_target > self.lane:
+            prefer, prefer_ok, other, other_ok = left, left_ok, right, right_ok  # 目的地が左（上）
+        elif final_target is not None and final_target < self.lane:
+            prefer, prefer_ok, other, other_ok = right, right_ok, left, left_ok  # 目的地が右（下）
+        else:
+            # through 車 or 最終目的地＝障害物レーン: 両側可なら id 偶奇、片側のみならそちら
+            if right_ok and left_ok:
+                return right if int(veh.id) % 2 == 0 else left
+            return right if right_ok else (left if left_ok else None)
+        if prefer_ok:
+            return prefer
+        return other if other_ok else None  # 本来の方向が不可なら逆側へ一旦退避

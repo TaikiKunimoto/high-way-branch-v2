@@ -15,6 +15,34 @@ from v2.constants import ACTIVATION_MARGIN
 from v2.snapshot import Snapshot, VehObs
 
 
+class LCOperation(BaseModel):
+    """車が完了すべき必須LC操作1つ（目標レーン・締切＋早め固定活性化の状態）。非frozen（活性化状態が変わる）。
+
+    車は複数の操作を ``V2CAV.operations`` リストで持ち、未完了のうち最も deadline が近い操作をアクティブとして
+    要求を出す。突発障害物の回避もこのリストへ1操作 append され、元の必須LCは保持される。
+    完了条件は操作種別で異なる（``is_done``）：本来の目標は「target レーン到達」、回避は「障害物を通過」。
+    後者により、退避レーンに到達しても障害物を通過するまで回避操作がアクティブのまま保持され（元の目標操作に
+    戻されず）、通過後に元の目標操作が再アクティブになって最終目的地へ復帰できる。
+    活性化状態（activated/activation_time）を内包し、待ち時間は wait_time() で求める（散在していた情報を集約）。
+    """
+
+    target_lane: int
+    deadline_pos: float  # 締切位置 D（回避操作では＝障害物位置）
+    is_avoidance: bool = False  # True=突発障害物の回避（障害物 deadline_pos を通過したら完了）/ False=本来の目標
+    activated: bool = False  # 活性化窓に初めて入ったら True（早め固定活性化、一度だけ）
+    activation_time: float | None = None  # 活性化時刻（待ち時間の起点）
+
+    def is_done(self, lane: int | None, lane_pos: float | None) -> bool:
+        """この操作が完了したか。回避は障害物位置を通過したら、本来の目標は target レーン到達で完了。"""
+        if self.is_avoidance:
+            return lane_pos is not None and lane_pos >= self.deadline_pos
+        return lane == self.target_lane
+
+    def wait_time(self, sim_time: float) -> float:
+        """活性化からの経過（EDF鍵の第2要素。未活性なら 0）。"""
+        return sim_time - self.activation_time if self.activation_time is not None else 0.0
+
+
 class LCRequest(BaseModel):
     """1要求車の必須LC要求。観測値（VehObs）から ``from_obs`` / ``build_all`` で生成する。"""
 

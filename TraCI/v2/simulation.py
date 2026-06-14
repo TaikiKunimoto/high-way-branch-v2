@@ -30,7 +30,7 @@ from v2.environment import Environment, Group
 from v2.layer1.priority import EDF
 from v2.layer1.rsu import RSU, Assignment
 from v2.layer2.pair_executor import Layer2
-from v2.lc_request import LCRequest
+from v2.lc_request import LCOperation, LCRequest
 from v2.obstacle import Obstacle
 from v2.snapshot import Snapshot
 from v2.v2_cav import V2CAV
@@ -275,9 +275,10 @@ class V2Simulation(BaseModel):
                 departPos="base",
                 departSpeed="last",
             )
-            self.vehicles.append(
-                V2CAV(id=str(self.veh_id), target_lane=group.target_lane, deadline_pos=group.deadline_pos)
-            )
+            operations: list[LCOperation] = []
+            if group.target_lane is not None and group.deadline_pos is not None:
+                operations.append(LCOperation(target_lane=group.target_lane, deadline_pos=group.deadline_pos))
+            self.vehicles.append(V2CAV(id=str(self.veh_id), operations=operations))
             self.lane_queues.setdefault(depart_lane, []).append(str(self.veh_id))
             self.veh_id += 1
 

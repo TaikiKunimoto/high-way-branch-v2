@@ -52,15 +52,16 @@ class Snapshot(BaseModel):
         obs: dict[str, VehObs] = {}
         lane_members: dict[str, list[str]] = {}
         for veh in vehicles:
+            op = veh.active_operation()  # 未達成で最も deadline が近い必須LC操作（なければ None＝through）
             obs[veh.id] = VehObs(
                 veh_id=veh.id,
-                target_lane=veh.target_lane,
-                deadline_pos=veh.deadline_pos,
+                target_lane=op.target_lane if op is not None else None,
+                deadline_pos=op.deadline_pos if op is not None else None,
                 road=veh.road,
                 lane=veh.lane,
                 lane_pos=veh.lane_pos,
                 speed=veh.speed,
-                activation_time=veh.activation_time,
+                activation_time=op.activation_time if op is not None else None,
                 is_obstacle=veh.is_obstacle,
             )
             if veh.road == mainlane_edge and veh.lane is not None:
