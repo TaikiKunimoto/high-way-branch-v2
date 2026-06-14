@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field
 
 from simulationStatistics.simulation_statistics import SimulationStatistics
 from utils.traci_wrapper import (
+    get_colliding_veh_id_list,
+    get_edge_lane_number,
     get_lane_last_step_veh_ids,
     get_sim_arrived_veh_id_list,
     get_sim_departed_veh_id_list,
@@ -80,7 +82,7 @@ class V2Simulation(BaseModel):
     ) -> None:
         self._set_environment(total_inflow, mlc_ratio)
         # 突発障害物。発生後、本線レーン数はエスカレーションの回避先選択に使う
-        obstacle_num_lanes = traci.edge.getLaneNumber(self.env.mainlane_edge) if obstacle is not None else 0
+        obstacle_num_lanes = get_edge_lane_number(self.env.mainlane_edge) if obstacle is not None else 0
         obstacle_placed_pos: float | None = None
         obstacle_target_id: str | None = None  # 位置到達トリガで pos 手前から監視中の車（pos 到達で停止＝障害物化）
         if obstacle is not None:
@@ -273,7 +275,7 @@ class V2Simulation(BaseModel):
 
     def _get_depart_lane(self, edge_id: str, allowed_lanes: tuple[int, ...] | None) -> str:
         """グループの投入レーン候補（None=全レーン）の中で待ち行列が最短のレーンを選ぶ（負荷分散）。"""
-        lanes_total: int = traci.edge.getLaneNumber(edge_id)
+        lanes_total: int = get_edge_lane_number(edge_id)
         candidates = [str(i) for i in (allowed_lanes if allowed_lanes is not None else range(lanes_total))]
         queue_length = {lane: len(self.lane_queues.get(lane, [])) for lane in candidates}
         lanes_without_queue = [lane for lane in candidates if queue_length[lane] == 0]
@@ -332,7 +334,7 @@ class V2Simulation(BaseModel):
 
     def _check_collision(self) -> None:
         """衝突を検出して記録（重複記録は抑制）。"""
-        colliding_ids: list[str] = list(traci.simulation.getCollidingVehiclesIDList())
+        colliding_ids: list[str] = get_colliding_veh_id_list()
         if not colliding_ids:
             return
         collision_time = get_sim_time() - 0.1
