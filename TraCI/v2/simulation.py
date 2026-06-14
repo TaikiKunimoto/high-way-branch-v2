@@ -80,11 +80,6 @@ class V2Simulation(BaseModel):
         if self.obstacle is not None:
             self.obstacle.validate_for(self.env.mainlane_edge, obstacle_num_lanes, self.env.mainlane_length)
 
-        r_pass_departed: list[str] = []
-        r_exit_departed: list[str] = []
-        r_pass_exited: list[str] = []
-        r_exit_exited: list[str] = []
-        r_exit_running: dict[str, float] = {}
         running_list: list[str] = []
         tc_accumulator = 0.0
         last_request_log_sec = -1
@@ -117,7 +112,7 @@ class V2Simulation(BaseModel):
                     poplist.append(index)
                     self.exit_vehicles.append(vid)
                     veh.record_arrival_time()
-                    veh.accumulate_exit_stats(stats, r_pass_exited, r_exit_exited)
+                    veh.accumulate_exit_stats(stats)
                     continue
 
                 # 混雑で未発進の車両
@@ -130,10 +125,6 @@ class V2Simulation(BaseModel):
                 if vid in departed_list:
                     veh.record_departure_time()
                     self.total_departed.append(vid)
-                    if veh.target_lane is None:  # 必須LCなし（through）
-                        r_pass_departed.append(vid)
-                    else:  # 必須LC車
-                        r_exit_departed.append(vid)
                     if vid in self.canceled_vehicles:
                         self.canceled_vehicles.remove(vid)
 
@@ -194,18 +185,11 @@ class V2Simulation(BaseModel):
                 "流入量(inflow)・レーン・位置・時刻の指定を確認してください。"
             )
 
-        # 終了時、残車両の統計を更新
+        # 終了時、残車両の統計を更新（全体平均速度のみ。route="" でグループ別バケツには入れない）
         for veh in self.vehicles:
             if veh.id not in running_list:
                 continue
-            if veh.target_lane is None:  # 必須LCなし（through）
-                stats.calculate_vehicle_average_speed("r_pass", veh.speed_history)
-            else:  # 必須LC車
-                stats.calculate_vehicle_average_speed("r_exit", veh.speed_history)
-                if veh.pos_x is not None:
-                    r_exit_running[veh.id] = veh.pos_x
-
-        r_exit_running_list = sorted(r_exit_running, key=lambda v: r_exit_running[v], reverse=True)
+            stats.calculate_vehicle_average_speed("", veh.speed_history)
 
         collided: set[str] = set()
         for _, vehicles in self.collision_history:
@@ -223,11 +207,6 @@ class V2Simulation(BaseModel):
             "total_departed_vehicle": self.total_departed,
             "running_vehicle": running_list,
             "exit_vehicle": self.exit_vehicles,
-            "r_pass_departed_vehicle": r_pass_departed,
-            "r_exit_departed_vehicle": r_exit_departed,
-            "r_pass_exit_vehicle": r_pass_exited,
-            "r_exit_exit_vehicle": r_exit_exited,
-            "r_exit_running_vehicle": r_exit_running_list,
             "canceled_vehicle": canceled_without_collision,
             "traffic_volume": len(self.total_departed) * (3600 / self.simulation_time),
             "total_collisions": total_collisions,
