@@ -12,6 +12,7 @@ import random
 import sys
 
 from simulationStatistics.simulation_statistics import SimulationStatistics
+from status.status import CarStatus
 from utils.traci_wrapper import (
     get_lane_last_step_veh_ids,
     get_sim_arrived_veh_id_list,
@@ -33,6 +34,7 @@ from v2_core.constants import (
 )
 from v2_core.lc_request import LCRequest, build_requests, in_activation_window
 from v2_core.priority import Key, order_requests
+from v2_core.rsu import Assignment, arbitrate
 from v2_core.snapshot import capture
 from v2_core.v2_cav import V2CAV
 
@@ -79,6 +81,7 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
     tc_accumulator = 0.0
     last_request_log_sec = -1
     tie_events = 0  # Phase A の鍵に同点が出た Tc ラウンド数（デッドロックフリーなら 0）
+    double_assign_events = 0  # 同一提供車が二重割当された Tc ラウンド数（横取り禁止なら 0）
 
     while _should_continue(state):
         traci.simulationStep()
@@ -136,18 +139,21 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
             if veh.params.leader_distance is not None and veh.params.leader_speed is not None:
                 stats.calculate_TTC(veh.params.leader_distance, veh.params.leader_speed, veh.params.speed)
 
-        # --- 毎Tc 2フェーズ調停。B3 は Phase A（鍵計算＋EDFソート）まで（Phase B 割当・Layer2 実行は B4+）---
+        # --- 毎Tc 2フェーズ調停。B4 は Phase A（鍵計算）＋ Phase B（割当＋役割付与）まで（Layer2 実行は B5）---
         tc_accumulator += TIME_STEP
         if tc_accumulator + 1e-9 >= TC:
             tc_accumulator = 0.0
             snap = capture(active, current_time)
             requests = build_requests(snap)
             keyed = order_requests(requests)  # Phase A: 全要求車の鍵を計算し EDF（dist昇順）にソート
-            # B4+: Phase B 割当 / B5: Layer2 実行
+            assignments = arbitrate(keyed, snap)  # Phase B: 鍵順に提供車を占有印つきで確保
+            _apply_roles(active, assignments)  # 毎Tc フル再構築（提供車=YIELDING / 要求車=LANE_CHANGING）
             if not _keys_unique(keyed):
                 tie_events += 1
+            if not _providers_unique(assignments):
+                double_assign_events += 1
             if current_sec % 50 == 0 and current_sec != last_request_log_sec:
-                _log_keyed(current_time, keyed)
+                _log_assignments(current_time, keyed, assignments)
                 last_request_log_sec = current_sec
 
         # --- 制御（速度）。traci の速度指令は次 step に反映されるため観測順と独立 ---
@@ -179,6 +185,7 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
 
     _print_simulation_info(state, running_list)
     print(f"Phase A: Tc rounds with key ties (should be 0): {tie_events}")
+    print(f"Phase B: Tc rounds with double-assigned providers (should be 0): {double_assign_events}")
     total_collisions, total_involved = _print_collision_summary(state)
     _write_tail_csv(inflow_pass, inflow_exit, seed, tail_position_list)
 
@@ -229,19 +236,42 @@ def _update_activation(veh: V2CAV) -> None:
         p.activation_time = p.sim_time
 
 
+def _apply_roles(active: list[V2CAV], assignments: list[Assignment]) -> None:
+    """毎Tc フル再構築: 全車の役割を NORMAL にリセットしてから割当結果を反映する。"""
+    by_id = {veh.params.id: veh for veh in active}
+    for veh in active:
+        veh.params.status = CarStatus.NORMAL
+        veh.params.providing_to_id = None
+        veh.params.receiving_from_id = None
+    for a in assignments:
+        requester = by_id.get(a.requester_id)
+        provider = by_id.get(a.provider_id)
+        if requester is None or provider is None:
+            continue
+        requester.params.status = CarStatus.LANE_CHANGING
+        requester.params.receiving_from_id = a.provider_id
+        provider.params.status = CarStatus.YIELDING
+        provider.params.providing_to_id = a.requester_id
+
+
 def _keys_unique(keyed: list[tuple[Key, LCRequest]]) -> bool:
     """鍵がすべて相異なるか（=同点なし）。ID が一意なので常に True のはず（デッドロックフリー）。"""
     keys = [k for k, _ in keyed]
     return len(set(keys)) == len(keys)
 
 
-def _log_keyed(sim_time: float, keyed: list[tuple[Key, LCRequest]]) -> None:
-    """Phase A の結果（EDF順・dist昇順）をログ出力する（B3 の検証用。挙動には影響しない）。"""
-    unique = len({k for k, _ in keyed})
-    tie = "" if unique == len(keyed) else f"  ⚠️TIE({len(keyed) - unique})"
-    print(f"[Tc t={sim_time:.1f}] requests={len(keyed)} unique_keys={unique}{tie}")
+def _providers_unique(assignments: list[Assignment]) -> bool:
+    """同一提供車が複数の要求車に割り当たっていないか（横取り禁止なら常に True）。"""
+    providers = [a.provider_id for a in assignments]
+    return len(set(providers)) == len(providers)
+
+
+def _log_assignments(sim_time: float, keyed: list[tuple[Key, LCRequest]], assignments: list[Assignment]) -> None:
+    """Phase A/B の結果（EDF順とどの要求車が提供車を得たか）をログ出力する（B4 の検証用）。"""
+    amap = {a.requester_id: a.provider_id for a in assignments}
+    print(f"[Tc t={sim_time:.1f}] requests={len(keyed)} assigned={len(assignments)}")
     for key, r in keyed:
-        print(f"    veh={r.veh_id} dist={key[0]:.1f} wait={r.wait_time:.1f} pos={r.current_pos:.1f} k={r.remaining_k}")
+        print(f"    veh={r.veh_id} dist={key[0]:.1f} k={r.remaining_k} <- provider={amap.get(r.veh_id, '-')}")
 
 
 def _set_environment(state: V2SimulationState, inflow_pass: int, inflow_exit: int) -> None:
