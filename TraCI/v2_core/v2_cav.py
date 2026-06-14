@@ -62,6 +62,9 @@ class V2CAVParams(BaseModel):
     safety_gap: float = MIN_GAP
     status: CarStatus = CarStatus.NORMAL
     do_not_speed_up: bool = False
+    # 必須LC要求の活性化（早め固定活性化）。活性化窓に初めて入った時刻を一度だけ記録する。
+    activation_time: float | None = None
+    activated: bool = False
     sim_time: float = 0.0
     departure_time: float | None = None
     arrival_time: float | None = None

@@ -28,7 +28,11 @@ from v2_core.constants import (
     MAINLANE_LENGTH,
     MIN_CONGESTED_VEHICLES,
     PASS_ROUTE,
+    TC,
+    TIME_STEP,
 )
+from v2_core.lc_request import LCRequest, build_requests, in_activation_window
+from v2_core.snapshot import capture
 from v2_core.v2_cav import V2CAV
 
 if "SUMO_HOME" in os.environ:
@@ -71,6 +75,8 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
     r_exit_exited: list[str] = []
     r_exit_running: dict[str, float] = {}
     running_list: list[str] = []
+    tc_accumulator = 0.0
+    last_request_log_sec = -1
 
     while _should_continue(state):
         traci.simulationStep()
@@ -89,7 +95,9 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
             max_tail_position = max(max_tail_position, tail_pos)
             last_recorded_second = current_sec
 
+        # --- 到着/未発進/出発処理 と 観測。全車を先に観測し、スナップショット S_t の一貫性を保つ ---
         poplist: list[int] = []
+        active: list[V2CAV] = []
         for index, veh in enumerate(state.vehicles):
             vid = veh.params.id
 
@@ -119,12 +127,26 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
                     state.canceled_vehicles.remove(vid)
 
             veh.update_observation()
-            # --- B2+: ここで毎Tc 2フェーズ調停（要求生成 → Phase A 鍵計算 → Phase B 割当 → Layer2 実行）---
-            veh.control_speed()
+            _update_activation(veh)
+            active.append(veh)
             _update_lane_queue(state, vid)
 
             if veh.params.leader_distance is not None and veh.params.leader_speed is not None:
                 stats.calculate_TTC(veh.params.leader_distance, veh.params.leader_speed, veh.params.speed)
+
+        # --- 毎Tc 2フェーズ調停。B2 は要求生成＋ログのみ（Phase A 鍵計算・Phase B 割当・Layer2 実行は B3+）---
+        tc_accumulator += TIME_STEP
+        if tc_accumulator + 1e-9 >= TC:
+            tc_accumulator = 0.0
+            snap = capture(active, current_time)
+            requests = build_requests(snap)
+            if current_sec % 50 == 0 and current_sec != last_request_log_sec:
+                _log_requests(current_time, requests)
+                last_request_log_sec = current_sec
+
+        # --- 制御（速度）。traci の速度指令は次 step に反映されるため観測順と独立 ---
+        for veh in active:
+            veh.control_speed()
 
         for i in sorted(poplist, reverse=True):
             state.vehicles.pop(i)
@@ -188,6 +210,23 @@ def _accumulate_exit_stats(
             stats.calculate_travel_time("r_exit", p.departure_time, p.arrival_time)
         stats.calculate_vehicle_average_speed("r_exit", p.speed_history)
         r_exit_exited.append(p.id)
+
+
+def _update_activation(veh: V2CAV) -> None:
+    """必須LC要求の活性化窓に初めて入った時刻を記録する（早め固定活性化、一度だけ）。"""
+    p = veh.params
+    if p.activated:
+        return
+    if in_activation_window(p.road, p.route, p.lane, p.lane_pos):
+        p.activated = True
+        p.activation_time = p.sim_time
+
+
+def _log_requests(sim_time: float, requests: list[LCRequest]) -> None:
+    """活性な必須LC要求の一覧をログ出力する（B2 の検証用。挙動には影響しない）。"""
+    print(f"[Tc t={sim_time:.1f}] active LC requests: {len(requests)}")
+    for r in sorted(requests, key=lambda x: x.current_pos, reverse=True):
+        print(f"    veh={r.veh_id} lane_k={r.remaining_k} pos={r.current_pos:.1f} wait={r.wait_time:.1f}")
 
 
 def _set_environment(state: V2SimulationState, inflow_pass: int, inflow_exit: int) -> None:
