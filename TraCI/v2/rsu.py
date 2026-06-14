@@ -12,10 +12,9 @@
 from dataclasses import dataclass
 
 from status.status import CarAction
-from v2_core.constants import MAINLANE_EDGE
-from v2_core.lc_request import LCRequest
-from v2_core.priority import Key
-from v2_core.snapshot import Snapshot
+from v2.lc_request import LCRequest
+from v2.priority import Key
+from v2.snapshot import Snapshot
 
 
 @dataclass(frozen=True)
@@ -37,7 +36,7 @@ def arbitrate(keyed: list[tuple[Key, LCRequest]], snap: Snapshot) -> list[Assign
         if provider is not None:
             claimed.add(provider)  # 占有印（横取り禁止）
             assignments.append(Assignment(req.veh_id, provider))
-        # provider が無い＝譲れる枠なし → B6 で Θ_force 劣化につなぐ
+        # provider が無い＝譲れる枠なし（今Tc は割当なし。次Tc 再試行）
     return assignments
 
 
@@ -47,7 +46,7 @@ def _find_provider(
     """次の1段LCの目標車線の後続から、鍵劣位かつ未占有の最近傍（停車中は2番目）を選ぶ。"""
     step = 1 if req.direction == CarAction.CHANGE_LEFT else -1
     next_lane = req.current_lane + step
-    members = snap.lane_members.get(f"{MAINLANE_EDGE}_{next_lane}", [])  # 縦位置降順
+    members = snap.lane_members.get(f"{snap.mainlane_edge}_{next_lane}", [])  # 縦位置降順
 
     viable: list[str] = []
     for vid in members:

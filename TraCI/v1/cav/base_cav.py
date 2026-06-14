@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 
 from pydantic import BaseModel
 
-from cav.constants import (
+from v1.cav.constants import (
     FRICTION_COEFFICIENT,
     MAX_ACCEL,
     MAX_DECEL,

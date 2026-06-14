@@ -7,12 +7,12 @@ gap を広げる。本処理は control_speed の後に呼び、協調減速の 
 import os
 import sys
 
-from v2_core.constants import MAX_DECEL, MAX_SPEED, MIN_GAP
-from v2_core.lc_request import LCRequest
-from v2_core.rsu import Assignment
-from v2_core.safety import VEH_LENGTH, g_req, is_insertion_safe, next_lane
-from v2_core.snapshot import Snapshot
-from v2_core.v2_cav import V2CAV
+from v2.constants import MAX_DECEL, MAX_SPEED, MIN_GAP
+from v2.lc_request import LCRequest
+from v2.rsu import Assignment
+from v2.safety import VEH_LENGTH, g_req, is_insertion_safe, next_lane
+from v2.snapshot import Snapshot
+from v2.v2_cav import V2CAV
 
 if "SUMO_HOME" in os.environ:
     tools = os.path.join(os.environ["SUMO_HOME"], "tools")

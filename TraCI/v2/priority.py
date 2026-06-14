@@ -5,8 +5,8 @@
 処理順に循環が出ない＝デッドロックフリー（コア機構_決定事項.md §3）。種別・失敗の酷さは鍵に入れない。
 """
 
-from v2_core.constants import R
-from v2_core.lc_request import LCRequest
+from v2.constants import R
+from v2.lc_request import LCRequest
 
 # 鍵: (dist, −wait_time, −lane_pos, veh_id)。タプル昇順比較で EDF 順（上位ほど緊急）になるよう各要素を符号付けする。
 Key = tuple[float, float, float, int]
