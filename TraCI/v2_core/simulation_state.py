@@ -32,6 +32,7 @@ from v2_core.constants import (
     TIME_STEP,
 )
 from v2_core.lc_request import LCRequest, build_requests, in_activation_window
+from v2_core.priority import Key, order_requests
 from v2_core.snapshot import capture
 from v2_core.v2_cav import V2CAV
 
@@ -77,6 +78,7 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
     running_list: list[str] = []
     tc_accumulator = 0.0
     last_request_log_sec = -1
+    tie_events = 0  # Phase A の鍵に同点が出た Tc ラウンド数（デッドロックフリーなら 0）
 
     while _should_continue(state):
         traci.simulationStep()
@@ -134,14 +136,18 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
             if veh.params.leader_distance is not None and veh.params.leader_speed is not None:
                 stats.calculate_TTC(veh.params.leader_distance, veh.params.leader_speed, veh.params.speed)
 
-        # --- 毎Tc 2フェーズ調停。B2 は要求生成＋ログのみ（Phase A 鍵計算・Phase B 割当・Layer2 実行は B3+）---
+        # --- 毎Tc 2フェーズ調停。B3 は Phase A（鍵計算＋EDFソート）まで（Phase B 割当・Layer2 実行は B4+）---
         tc_accumulator += TIME_STEP
         if tc_accumulator + 1e-9 >= TC:
             tc_accumulator = 0.0
             snap = capture(active, current_time)
             requests = build_requests(snap)
+            keyed = order_requests(requests)  # Phase A: 全要求車の鍵を計算し EDF（dist昇順）にソート
+            # B4+: Phase B 割当 / B5: Layer2 実行
+            if not _keys_unique(keyed):
+                tie_events += 1
             if current_sec % 50 == 0 and current_sec != last_request_log_sec:
-                _log_requests(current_time, requests)
+                _log_keyed(current_time, keyed)
                 last_request_log_sec = current_sec
 
         # --- 制御（速度）。traci の速度指令は次 step に反映されるため観測順と独立 ---
@@ -172,6 +178,7 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
     canceled_without_collision = [v for v in state.canceled_vehicles if v not in collided]
 
     _print_simulation_info(state, running_list)
+    print(f"Phase A: Tc rounds with key ties (should be 0): {tie_events}")
     total_collisions, total_involved = _print_collision_summary(state)
     _write_tail_csv(inflow_pass, inflow_exit, seed, tail_position_list)
 
@@ -222,11 +229,19 @@ def _update_activation(veh: V2CAV) -> None:
         p.activation_time = p.sim_time
 
 
-def _log_requests(sim_time: float, requests: list[LCRequest]) -> None:
-    """活性な必須LC要求の一覧をログ出力する（B2 の検証用。挙動には影響しない）。"""
-    print(f"[Tc t={sim_time:.1f}] active LC requests: {len(requests)}")
-    for r in sorted(requests, key=lambda x: x.current_pos, reverse=True):
-        print(f"    veh={r.veh_id} lane_k={r.remaining_k} pos={r.current_pos:.1f} wait={r.wait_time:.1f}")
+def _keys_unique(keyed: list[tuple[Key, LCRequest]]) -> bool:
+    """鍵がすべて相異なるか（=同点なし）。ID が一意なので常に True のはず（デッドロックフリー）。"""
+    keys = [k for k, _ in keyed]
+    return len(set(keys)) == len(keys)
+
+
+def _log_keyed(sim_time: float, keyed: list[tuple[Key, LCRequest]]) -> None:
+    """Phase A の結果（EDF順・dist昇順）をログ出力する（B3 の検証用。挙動には影響しない）。"""
+    unique = len({k for k, _ in keyed})
+    tie = "" if unique == len(keyed) else f"  ⚠️TIE({len(keyed) - unique})"
+    print(f"[Tc t={sim_time:.1f}] requests={len(keyed)} unique_keys={unique}{tie}")
+    for key, r in keyed:
+        print(f"    veh={r.veh_id} dist={key[0]:.1f} wait={r.wait_time:.1f} pos={r.current_pos:.1f} k={r.remaining_k}")
 
 
 def _set_environment(state: V2SimulationState, inflow_pass: int, inflow_exit: int) -> None:
