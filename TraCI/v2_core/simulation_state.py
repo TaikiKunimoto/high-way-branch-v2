@@ -33,9 +33,10 @@ from v2_core.constants import (
     TIME_STEP,
 )
 from v2_core.lc_request import LCRequest, build_requests, in_activation_window
+from v2_core.pair_executor import execute_pairs
 from v2_core.priority import Key, order_requests
 from v2_core.rsu import Assignment, arbitrate
-from v2_core.snapshot import capture
+from v2_core.snapshot import Snapshot, capture
 from v2_core.v2_cav import V2CAV
 
 if "SUMO_HOME" in os.environ:
@@ -82,6 +83,10 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
     last_request_log_sec = -1
     tie_events = 0  # Phase A の鍵に同点が出た Tc ラウンド数（デッドロックフリーなら 0）
     double_assign_events = 0  # 同一提供車が二重割当された Tc ラウンド数（横取り禁止なら 0）
+    total_lc = 0  # Layer2 で実行された瞬時LCの総数
+    snap: Snapshot | None = None  # 直近 Tc のスナップショット（Layer2 実行で参照）
+    assignments: list[Assignment] = []  # 直近 Tc の割当（Layer2 で実行）
+    req_by_id: dict[str, LCRequest] = {}  # 直近 Tc の要求（id 引き）
 
     while _should_continue(state):
         traci.simulationStep()
@@ -139,7 +144,7 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
             if veh.params.leader_distance is not None and veh.params.leader_speed is not None:
                 stats.calculate_TTC(veh.params.leader_distance, veh.params.leader_speed, veh.params.speed)
 
-        # --- 毎Tc 2フェーズ調停。B4 は Phase A（鍵計算）＋ Phase B（割当＋役割付与）まで（Layer2 実行は B5）---
+        # --- 毎Tc 2フェーズ調停。Phase A（鍵計算）→ Phase B（割当＋役割付与）。Layer2 実行は制御後に行う ---
         tc_accumulator += TIME_STEP
         if tc_accumulator + 1e-9 >= TC:
             tc_accumulator = 0.0
@@ -147,6 +152,7 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
             requests = build_requests(snap)
             keyed = order_requests(requests)  # Phase A: 全要求車の鍵を計算し EDF（dist昇順）にソート
             assignments = arbitrate(keyed, snap)  # Phase B: 鍵順に提供車を占有印つきで確保
+            req_by_id = {r.veh_id: r for _, r in keyed}
             _apply_roles(active, assignments)  # 毎Tc フル再構築（提供車=YIELDING / 要求車=LANE_CHANGING）
             if not _keys_unique(keyed):
                 tie_events += 1
@@ -159,6 +165,10 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
         # --- 制御（速度）。traci の速度指令は次 step に反映されるため観測順と独立 ---
         for veh in active:
             veh.control_speed()
+
+        # --- Layer2 実行。制御後に呼び、協調減速の slowDown と changeLane が最後の指令になるようにする ---
+        if snap is not None:
+            total_lc += execute_pairs(assignments, req_by_id, snap, {veh.params.id: veh for veh in active})
 
         for i in sorted(poplist, reverse=True):
             state.vehicles.pop(i)
@@ -186,6 +196,7 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
     _print_simulation_info(state, running_list)
     print(f"Phase A: Tc rounds with key ties (should be 0): {tie_events}")
     print(f"Phase B: Tc rounds with double-assigned providers (should be 0): {double_assign_events}")
+    print(f"Layer2: total instant lane changes executed: {total_lc}")
     total_collisions, total_involved = _print_collision_summary(state)
     _write_tail_csv(inflow_pass, inflow_exit, seed, tail_position_list)
 
