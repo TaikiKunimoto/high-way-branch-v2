@@ -27,6 +27,7 @@ from utils.traci_wrapper import (
     get_veh_type,
 )
 from v2_core.constants import (
+    DEGRADED_WAIT_SPEED,
     FRICTION_COEFFICIENT,
     MAX_ACCEL,
     MAX_DECEL,
@@ -65,6 +66,7 @@ class V2CAVParams(BaseModel):
     # Layer1 調停の役割（毎Tc フル再構築）。提供車↔要求車の対応を保持する。
     providing_to_id: str | None = None  # 自分が gap を提供している相手（要求車）
     receiving_from_id: str | None = None  # 自分に gap を提供してくれる相手（提供車）
+    degraded: bool = False  # Θ_force 劣化モード（枠なし＆締切間際 → 安全減速で待機）
     # 必須LC要求の活性化（早め固定活性化）。活性化窓に初めて入った時刻を一度だけ記録する。
     activation_time: float | None = None
     activated: bool = False
@@ -127,6 +129,15 @@ class V2CAV:
         if p.leader_distance is not None and p.leader_distance < MIN_GAP:
             if p.leader_speed is not None:
                 self._emergency_brake(p.leader_speed)
+            return
+
+        # Θ_force 劣化モード: 枠なし＆締切間際 → 無理なLCをせず安全減速で待機（gap が開くのを待つ）
+        if p.degraded:
+            target = min(p.speed, DEGRADED_WAIT_SPEED)
+            if p.leader_speed is not None and p.leader_distance is not None and p.leader_distance < p.safety_gap:
+                target = min(target, p.leader_speed)  # 近い前方車は尊重
+            duration = self._safe_decel_duration(p.speed - target)
+            traci.vehicle.slowDown(p.id, max(target, 0.0), duration)
             return
 
         # 協調・車線変更中は加速しない（B1 では常に NORMAL のため False）
