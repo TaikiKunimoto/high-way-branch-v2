@@ -1,0 +1,5 @@
+<connections>
+    <connection from="MergeZone" to="MainLane" fromLane="1" toLane="0"/>
+    <connection from="MergeZone" to="MainLane" fromLane="2" toLane="1"/>
+    <connection from="MergeZone" to="MainLane" fromLane="3" toLane="2"/>
+</connections>

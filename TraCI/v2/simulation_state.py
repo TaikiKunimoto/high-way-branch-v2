@@ -62,8 +62,8 @@ class V2SimulationState:
         self.exit_vehicles: list[str] = []
         self.canceled_vehicles: list[str] = []
         self.collision_history: list[tuple[float, list[str]]] = []
-        # 各車線の待ち行列（流入レーン選択の負荷分散に使う）
-        self.lane_queues: dict[str, list[str]] = {"0": [], "1": [], "2": []}
+        # 各車線の待ち行列（流入レーン選択の負荷分散に使う）。レーンは環境により可変なので動的に作る
+        self.lane_queues: dict[str, list[str]] = {}
 
 
 def run(
@@ -305,12 +305,12 @@ def _set_environment(state: V2SimulationState, total_inflow: float, mlc_ratio: f
         print(f"depart_times[{group.name}]:", times)
 
 
-def _get_depart_lane(state: V2SimulationState, edge_id: str) -> str:
-    """待ち行列の最も短いレーンを選んで流入させる（負荷分散）。"""
-    lanes: int = traci.edge.getLaneNumber(edge_id)
-    available_lanes = [str(i) for i in range(lanes)]
-    queue_length = {lane: len(state.lane_queues[lane]) for lane in available_lanes}
-    lanes_without_queue = [lane for lane in available_lanes if queue_length[lane] == 0]
+def _get_depart_lane(state: V2SimulationState, edge_id: str, allowed_lanes: tuple[int, ...] | None) -> str:
+    """グループの投入レーン候補（None=全レーン）の中で待ち行列が最短のレーンを選ぶ（負荷分散）。"""
+    lanes_total: int = traci.edge.getLaneNumber(edge_id)
+    candidates = [str(i) for i in (allowed_lanes if allowed_lanes is not None else range(lanes_total))]
+    queue_length = {lane: len(state.lane_queues.get(lane, [])) for lane in candidates}
+    lanes_without_queue = [lane for lane in candidates if queue_length[lane] == 0]
     if lanes_without_queue:
         return random.choice(lanes_without_queue)
     min_length = min(queue_length.values())
@@ -325,7 +325,7 @@ def _add_vehicle(state: V2SimulationState) -> None:
         if sumo_time not in depart_times:
             continue
         depart_edge = group.depart_edge if group.depart_edge is not None else state.env.mainlane_edge
-        depart_lane = _get_depart_lane(state, depart_edge)
+        depart_lane = _get_depart_lane(state, depart_edge, group.depart_lanes)
         traci.vehicle.add(
             vehID=str(state.veh_id),
             routeID=group.route,
@@ -335,7 +335,7 @@ def _add_vehicle(state: V2SimulationState) -> None:
             departSpeed="last",
         )
         state.vehicles.append(V2CAV(state.veh_id, target_lane=group.target_lane, deadline_pos=group.deadline_pos))
-        state.lane_queues[depart_lane].append(str(state.veh_id))
+        state.lane_queues.setdefault(depart_lane, []).append(str(state.veh_id))
         state.veh_id += 1
 
 

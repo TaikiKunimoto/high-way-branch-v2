@@ -21,6 +21,7 @@ class Group:
     target_lane: int | None = None  # 必須LC の目標レーン（None=必須LCなし）
     deadline_pos: float | None = None  # 締切位置（target_lane != None のとき必須）
     depart_edge: str | None = None  # 投入 edge（None=本線 mainlane_edge）
+    depart_lanes: tuple[int, ...] | None = None  # 投入レーン候補（None=投入edgeの全レーン）
 
 
 @dataclass(frozen=True)
@@ -50,10 +51,10 @@ class Environment:
         return rates
 
 
-# --- 環境① S-D 単一分流（現状唯一 net が存在する環境）---
+# --- 環境① S-D 単一分流 ---
 DIVERGE = Environment(
     name="diverge",
-    sumocfg="../config/high-way.sumocfg",
+    sumocfg="../config/v2/diverge.sumocfg",
     mainlane_edge="MainLane1",
     mainlane_length=2500.0,
     groups=(
@@ -62,4 +63,18 @@ DIVERGE = Environment(
     ),
 )
 
-ENVIRONMENTS: dict[str, Environment] = {DIVERGE.name: DIVERGE}
+# --- 環境② S-M 単一合流（始端の加速車線=MergeZone_0 が drop。加速車線の車は Lane1 へ必須合流）---
+MERGE = Environment(
+    name="merge",
+    sumocfg="../config/v2/merge.sumocfg",
+    mainlane_edge="MergeZone",
+    mainlane_length=200.0,  # 加速車線が消える位置 ＝ 締切
+    groups=(
+        # 直進（必須LCなし）。本線 lane 1/2/3（lane0 は加速車線）
+        Group(name="through", route="r_main", weight=1.0, depart_lanes=(1, 2, 3)),
+        # 合流（加速車線 lane0 → 目標 lane1 へ必須LC、締切=加速車線端 200m）
+        Group(name="merging", route="r_main", weight=1.0, target_lane=1, deadline_pos=200.0, depart_lanes=(0,)),
+    ),
+)
+
+ENVIRONMENTS: dict[str, Environment] = {DIVERGE.name: DIVERGE, MERGE.name: MERGE}

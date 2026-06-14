@@ -231,7 +231,7 @@ def run(inflow_pass: int, inflow_exit: int) -> None:
 
 # シミュレーションを開始する
 def _startSim() -> None:
-    traci.start([sumoBinary, "-c", "../config/high-way.sumocfg"])
+    traci.start([sumoBinary, "-c", "../config/v1/high-way.sumocfg"])
     print("Simulation started")
 
 
