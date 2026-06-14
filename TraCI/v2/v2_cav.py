@@ -1,0 +1,234 @@
+"""v2 の車両クラス（自己完結）。
+
+``cav.base_cav`` / ``cav.custom_cav`` からは継承・import しない。縦方向追従（control_speed）と状態観測、
+Layer2 の自車挙動・必須LC活性化・障害物化を持つ。Layer1 調停は ``rsu`` が外側で行う。
+データ（状態）と振る舞いを1つの pydantic BaseModel にまとめる（``V2Simulation`` と同じ流儀）。
+縦方向の追従ロジックは ``custom_cav`` の挙動を踏襲した自己完結実装。
+"""
+
+import math
+import os
+import sys
+from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel, Field
+
+from status.status import CarStatus
+from utils.traci_wrapper import (
+    get_lane_max_speed,
+    get_sim_time,
+    get_veh_departure,
+    get_veh_lane_id,
+    get_veh_lane_index,
+    get_veh_lane_position,
+    get_veh_leader,
+    get_veh_pos,
+    get_veh_road_id,
+    get_veh_route_id,
+    get_veh_speed,
+    get_veh_type,
+)
+from v2.constants import (
+    FRICTION_COEFFICIENT,
+    MAX_ACCEL,
+    MAX_DECEL,
+    MIN_GAP,
+    REACTION_TIME,
+)
+from v2.lc_request import LCRequest
+
+if TYPE_CHECKING:
+    from simulationStatistics.simulation_statistics import SimulationStatistics
+
+if "SUMO_HOME" in os.environ:
+    tools = os.path.join(os.environ["SUMO_HOME"], "tools")
+    sys.path.append(tools)
+else:
+    sys.exit("please declare environment variable 'SUMO_HOME'")
+import traci
+
+
+class V2CAV(BaseModel):
+    """1車両の状態（データ）とローカル制御（Layer2 の自車挙動）。Layer1 調停は ``rsu`` が外側で行う。
+
+    生成時（SUMO に add 済みの前提）に ``model_post_init`` で traci から type/route/lane を取得し、SUMO の
+    自律車線変更・速度制御を無効化する。静的スカラー優先度（0–7）は持たない（優先度は EDF の鍵で都度決まる）。
+    """
+
+    id: str
+    type_id: str | None = None
+    route: str | None = None  # SUMO ルート（net を通すための経路。機構は参照しない）
+    # 必須LC仕様（環境が生成時に与える / 障害物エスカレーションで動的付与）。target_lane=None なら必須LCなし。
+    target_lane: int | None = None
+    deadline_pos: float | None = None
+    # 障害物（突発）: True の車は停止し続け、調停（要求・提供）から除外される。snapshot には載る（安全判定で回避）。
+    is_obstacle: bool = False
+    road: str | None = None
+    lane_id: str | None = None
+    lane: int | None = None
+    lane_pos: float | None = None
+    pos_x: float | None = None
+    pos_y: float | None = None
+    speed: float = 0.0
+    leader: tuple[str, float] | None = None
+    leader_distance: float | None = None
+    leader_speed: float | None = None
+    length: float = 5.0
+    safety_gap: float = MIN_GAP
+    status: CarStatus = CarStatus.NORMAL
+    do_not_speed_up: bool = False
+    # Layer1 調停の役割（毎Tc フル再構築）。提供車↔要求車の対応を保持する。
+    providing_to_id: str | None = None  # 自分が gap を提供している相手（要求車）
+    receiving_from_id: str | None = None  # 自分に gap を提供してくれる相手（提供車）
+    # 必須LC要求の活性化（早め固定活性化）。活性化窓に初めて入った時刻を一度だけ記録する。
+    activation_time: float | None = None
+    activated: bool = False
+    sim_time: float = 0.0
+    departure_time: float | None = None
+    arrival_time: float | None = None
+    speed_history: list[float] = Field(default_factory=list)
+    emergency_brake_counter: int = 0
+
+    def model_post_init(self, __context: Any) -> None:
+        """生成直後（SUMO に車両 add 済み）に traci から属性取得＋SUMO の自律制御を無効化する。
+
+        車線変更は traci.changeLane のみ、速度も traci で管理し、提供車の協調減速など制御介入を可能にする。
+        """
+        self.type_id = get_veh_type(self.id)
+        self.route = get_veh_route_id(self.id)
+        self.lane_id = get_veh_lane_id(self.id)
+        traci.vehicle.setLaneChangeMode(self.id, 0)
+        traci.vehicle.setSpeedMode(self.id, 0)
+        traci.vehicle.setMinGap(self.id, MIN_GAP)
+        traci.vehicle.setTau(self.id, 1.0)
+
+    # --- 時刻記録 ---
+    def record_departure_time(self) -> None:
+        """出発（投入）時刻を記録する。出発後も snapshot には載るが、出発前は存在しない車両IDである点に注意。"""
+        self.departure_time = get_veh_departure(self.id)
+
+    def record_arrival_time(self) -> None:
+        """到着（範囲外に出た）時刻を記録する。到着後も snapshot には載るが、以降の観測・制御は行わない。"""
+        self.arrival_time = get_sim_time()
+
+    def accumulate_exit_stats(
+        self, stats: "SimulationStatistics", r_pass_exited: list[str], r_exit_exited: list[str]
+    ) -> None:
+        """範囲外に出た自車の走行時間・平均速度を統計に加算する（through=r_pass バケツ／必須LC車=r_exit バケツ）。"""
+        if self.target_lane is None:  # 必須LCなし（through）
+            if self.departure_time is not None and self.arrival_time is not None:
+                stats.calculate_travel_time("r_pass", self.departure_time, self.arrival_time)
+            stats.calculate_vehicle_average_speed("r_pass", self.speed_history)
+            r_pass_exited.append(self.id)
+        else:  # 必須LC車
+            if self.departure_time is not None and self.arrival_time is not None:
+                stats.calculate_travel_time("r_exit", self.departure_time, self.arrival_time)
+            stats.calculate_vehicle_average_speed("r_exit", self.speed_history)
+            r_exit_exited.append(self.id)
+
+    def update_activation(self, mainlane_edge: str) -> None:
+        """必須LC要求の活性化窓に初めて入った時刻を記録する（早め固定活性化、一度だけ）。"""
+        if self.activated:
+            return
+        if LCRequest.in_activation_window(
+            mainlane_edge, self.road, self.target_lane, self.deadline_pos, self.lane, self.lane_pos
+        ):
+            self.activated = True
+            self.activation_time = self.sim_time
+
+    def make_obstacle(self) -> None:
+        """この車を障害物（突発）にする。停止し、必須LC要求を持たず、調停から外れる。"""
+        self.is_obstacle = True
+        self.target_lane = None
+        self.deadline_pos = None
+        traci.vehicle.setSpeed(self.id, 0.0)
+
+    # --- 状態観測 ---
+    def update_self_observation(self) -> None:
+        """毎step、自車の観測値を traci から取得して自身を更新する。"""
+        self.sim_time = get_sim_time()
+        pos = get_veh_pos(self.id)
+        self.pos_x, self.pos_y = pos[0], pos[1]
+        self.lane_pos = get_veh_lane_position(self.id)
+        self.speed = get_veh_speed(self.id)
+        self.speed_history.append(self.speed)
+        self.road = get_veh_road_id(self.id)
+        self.lane = get_veh_lane_index(self.id)
+        self.lane_id = get_veh_lane_id(self.id)
+        self.leader = get_veh_leader(self.id, 0)
+        self.leader_distance = self.leader[1] if self.leader is not None else None
+        self.leader_speed = get_veh_speed(self.leader[0]) if self.leader is not None else None
+        self._calculate_safety_gap()
+
+    # --- 縦方向制御（car-following）---
+    def control_speed(self) -> None:
+        """前方車両との車間に応じた速度制御。SUMO の安全制御は無効化済みのため自前で行う。"""
+        if self.is_obstacle:
+            traci.vehicle.setSpeed(self.id, 0.0)  # 障害物は停止し続ける
+            return
+        if self.leader_distance is not None and self.leader_distance < MIN_GAP:
+            if self.leader_speed is not None:
+                self._emergency_brake(self.leader_speed)
+            return
+
+        # 協調・車線変更中は加速しない
+        self.do_not_speed_up = self.status in (CarStatus.YIELDING, CarStatus.LANE_CHANGING)
+
+        if self.lane_id is None:
+            return
+        speed_limit = get_lane_max_speed(self.lane_id)
+
+        if self.leader is None or self.leader_speed is None or self.leader_distance is None:
+            self._control_speed_by_speed_limit(speed_limit)
+            return
+
+        speed_diff = self.speed - self.leader_speed
+        min_duration = self._safe_decel_duration(speed_diff)
+        ttc = self._ttc(self.leader_distance, speed_diff)
+
+        if self.leader_distance >= self.safety_gap:
+            if speed_diff <= 0 or min_duration < ttc:
+                self._control_speed_by_speed_limit(speed_limit)
+            else:
+                traci.vehicle.slowDown(self.id, self.leader_speed, min(ttc, min_duration))
+        else:
+            if self.do_not_speed_up:
+                return
+            if speed_diff >= 0:
+                target_speed = self.leader_speed - 1 if self.leader_speed > 1 else 0.0
+                traci.vehicle.slowDown(self.id, target_speed, min(ttc, min_duration))
+
+    def _control_speed_by_speed_limit(self, speed_limit: float) -> None:
+        """制限速度に合わせて加減速する。"""
+        if self.speed > speed_limit:
+            traci.vehicle.slowDown(self.id, speed_limit, self._safe_decel_duration(self.speed - speed_limit))
+        elif not self.do_not_speed_up:
+            traci.vehicle.slowDown(self.id, speed_limit, self._safe_accel_duration(speed_limit - self.speed))
+
+    def _emergency_brake(self, target_speed: float) -> None:
+        """衝突回避の緊急減速。"""
+        self.emergency_brake_counter += 1
+        traci.vehicle.setSpeed(self.id, min(target_speed, self.speed, 1.0))
+
+    # --- 計算ヘルパ ---
+    def _calculate_safety_gap(self) -> None:
+        """追従の安全車間 = 空走距離 + 制動距離 + minGap。"""
+        speed_kmh = self.speed * 3.6
+        reaction_distance = self.speed * REACTION_TIME
+        braking_distance = (speed_kmh**2) / (254.016 * FRICTION_COEFFICIENT)
+        self.safety_gap = reaction_distance + braking_distance + MIN_GAP
+
+    @staticmethod
+    def _safe_decel_duration(speed_diff: float) -> float:
+        """最大減速で速度差を0にするのに要する時間。"""
+        return speed_diff / abs(MAX_DECEL) if speed_diff > 0 else 0.0
+
+    @staticmethod
+    def _safe_accel_duration(speed_diff: float) -> float:
+        """最大加速で速度差を0にするのに要する時間。"""
+        return speed_diff / abs(MAX_ACCEL) if speed_diff > 0 else 0.0
+
+    @staticmethod
+    def _ttc(distance: float, speed_diff: float) -> float:
+        """現在の速度差で進んだ際の衝突までの時間（TTC）。"""
+        return distance / speed_diff if speed_diff > 0 else math.inf
