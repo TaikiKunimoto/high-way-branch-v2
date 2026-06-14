@@ -102,9 +102,9 @@ def run(
         traci.simulationStep()
         _check_collision(state)
 
-        arrived_list = get_sim_arrived_veh_id_list()
-        departed_list = get_sim_departed_veh_id_list()
-        running_list = get_veh_id_list()
+        arrived_list = get_sim_arrived_veh_id_list()  # 直近stepで範囲外に出た（到着した）車両ID
+        departed_list = get_sim_departed_veh_id_list()  # 直近stepで投入された（出発した）車両ID
+        running_list = get_veh_id_list()  # 現在ネットワーク上を走行中の全車両ID
 
         # tail position の記録（タイムスペース指標用）
         current_time = get_sim_time()
