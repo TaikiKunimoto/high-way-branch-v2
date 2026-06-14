@@ -59,6 +59,11 @@ class V2Simulation(BaseModel):
 
     simulation_time: float
     env: Environment
+    total_inflow: float  # 総流入量 Q [veh/h]
+    mlc_ratio: float  # 必須LC車の比率 f（0..1）
+    seed: str  # 乱数シード（統計ラベル用。random.seed の実行はエントリ側）
+    obstacle: Obstacle | None = None  # 突発障害物（指定レーン・位置・時刻）。None なら障害物なし
+
     veh_id: int = 0  # 次に投入する車両へ振る連番ID
     # グループ別の流入時刻（環境のグループ定義順を保持）
     group_depart_times: list[tuple[Group, list[float]]] = Field(default_factory=list)
@@ -72,21 +77,14 @@ class V2Simulation(BaseModel):
     # 各車線の待ち行列（流入レーン選択の負荷分散に使う）。レーンは環境により可変なので動的に作る
     lane_queues: dict[str, list[str]] = Field(default_factory=dict)
 
-    def run(
-        self,
-        total_inflow: float,
-        mlc_ratio: float,
-        stats: SimulationStatistics,
-        seed: str,
-        obstacle: Obstacle | None = None,  # 突発障害物（指定レーン・位置・時刻）。None なら障害物なし
-    ) -> None:
-        self._set_environment(total_inflow, mlc_ratio)
+    def run(self, stats: SimulationStatistics) -> None:
+        self._set_environment()
         # 突発障害物。発生後、本線レーン数はエスカレーションの回避先選択に使う
-        obstacle_num_lanes = get_edge_lane_number(self.env.mainlane_edge) if obstacle is not None else 0
+        obstacle_num_lanes = get_edge_lane_number(self.env.mainlane_edge) if self.obstacle is not None else 0
         obstacle_placed_pos: float | None = None
         obstacle_target_id: str | None = None  # 位置到達トリガで pos 手前から監視中の車（pos 到達で停止＝障害物化）
-        if obstacle is not None:
-            obstacle.validate_for(self.env.mainlane_edge, obstacle_num_lanes, self.env.mainlane_length)
+        if self.obstacle is not None:
+            self.obstacle.validate_for(self.env.mainlane_edge, obstacle_num_lanes, self.env.mainlane_length)
 
         last_recorded_second = -1
         tail_position_list: list[tuple[float, float]] = []
@@ -165,13 +163,13 @@ class V2Simulation(BaseModel):
                     stats.calculate_TTC(veh.leader_distance, veh.leader_speed, veh.speed)
 
             # --- 突発障害物（位置到達トリガ）。appear_time 以降、指定レーンで pos に到達した最初の車を停止＝障害物化 ---
-            if obstacle is not None and obstacle_placed_pos is None and current_time >= obstacle.appear_time:
-                obstacle_target_id, obstacle_placed_pos = obstacle.place(
+            if self.obstacle is not None and obstacle_placed_pos is None and current_time >= self.obstacle.appear_time:
+                obstacle_target_id, obstacle_placed_pos = self.obstacle.place(
                     active, self.env.mainlane_edge, obstacle_target_id
                 )
             # 障害物より後方・同一レーンの through 車に必須LC（回避）を動的付与＝エスカレーション（コア機構 §4）
-            if obstacle is not None and obstacle_placed_pos is not None:
-                obstacle.escalate(active, self.env.mainlane_edge, obstacle_placed_pos, obstacle_num_lanes)
+            if self.obstacle is not None and obstacle_placed_pos is not None:
+                self.obstacle.escalate(active, self.env.mainlane_edge, obstacle_placed_pos, obstacle_num_lanes)
 
             # --- 毎Tc 2フェーズ調停。Phase A（鍵計算）→ Phase B（割当＋役割付与）。Layer2 実行は制御後に行う ---
             tc_accumulator += TIME_STEP
@@ -205,10 +203,10 @@ class V2Simulation(BaseModel):
             self._add_vehicle()
 
         # 障害物指定があったのに最後まで配置できなければ、黙って no-op にせず原因つきで失敗させる
-        if obstacle is not None and obstacle_placed_pos is None:
+        if self.obstacle is not None and obstacle_placed_pos is None:
             raise RuntimeError(
-                f"障害物を配置できませんでした: 指定レーン {obstacle.lane} で pos {obstacle.pos}m に到達する車両が "
-                f"appear_time {obstacle.appear_time}s 以降シミュレーション終了まで現れませんでした。"
+                f"障害物を配置できませんでした: 指定レーン {self.obstacle.lane} で pos {self.obstacle.pos}m に到達する車両が "
+                f"appear_time {self.obstacle.appear_time}s 以降シミュレーション終了まで現れませんでした。"
                 "流入量(inflow)・レーン・位置・時刻の指定を確認してください。"
             )
 
@@ -235,7 +233,7 @@ class V2Simulation(BaseModel):
         print(f"Phase B: Tc rounds with double-assigned providers (should be 0): {double_assign_events}")
         print(f"Layer2: total instant lane changes executed: {total_lc}")
         total_collisions, total_involved = self._print_collision_summary()
-        self._write_tail_csv(seed, tail_position_list)
+        self._write_tail_csv(tail_position_list)
 
         results = {
             "total_generated_vehicle": self.veh_id,
@@ -253,15 +251,15 @@ class V2Simulation(BaseModel):
             "total_vehicles_involved": total_involved,
             "max_tail_position": max_tail_position,
         }
-        stats.add_result(self.simulation_time, seed, self.inflow_through, self.inflow_mlc, results)
+        stats.add_result(self.simulation_time, self.seed, self.inflow_through, self.inflow_mlc, results)
         traci.close()
 
-    def _set_environment(self, total_inflow: float, mlc_ratio: float) -> None:
+    def _set_environment(self) -> None:
         """環境のグループ別流入量（総流入 Q × 必須LC比率 f から展開）に従い、流入時刻を乱数で決定（seed で決定的）。
 
         グループ定義順に random.sample を呼ぶことで決定性を保つ（分流D では through→exiting＝旧 pass→exit と一致）。
         """
-        for group, rate in self.env.group_rates(total_inflow, mlc_ratio):
+        for group, rate in self.env.group_rates(self.total_inflow, self.mlc_ratio):
             k = int((self.simulation_time / 3600) * rate)
             seconds = sorted(random.sample(range(int(self.simulation_time)), k))
             # 1秒以上間隔を確保（同一stepへの偏りを避ける）
@@ -373,8 +371,8 @@ class V2Simulation(BaseModel):
             print(f"Time {time_val:.1f}: Collision between vehicles: {', '.join(vehicles)}")
         return total_collisions, total_vehicles_involved
 
-    def _write_tail_csv(self, seed: str, tail_position_list: list[tuple[float, float]]) -> None:
-        tail_csv = f"{OUTPUT_DIR}/tail_positions_{self.env.name}_through{self.inflow_through}_mlc{self.inflow_mlc}_seed{seed}.csv"
+    def _write_tail_csv(self, tail_position_list: list[tuple[float, float]]) -> None:
+        tail_csv = f"{OUTPUT_DIR}/tail_positions_{self.env.name}_through{self.inflow_through}_mlc{self.inflow_mlc}_seed{self.seed}.csv"
         with open(tail_csv, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["time", "tail_position"])
