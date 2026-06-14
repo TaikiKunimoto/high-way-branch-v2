@@ -1,0 +1,6 @@
+<nodes>
+    <node id="Start" x="0.0" y="0.0" type="dead_end"/>
+    <node id="WeaveEnd" x="2300.0" y="0.0" type="priority"/>
+    <node id="End" x="2500.0" y="0.0" type="dead_end"/>
+    <node id="Exit" x="2450.0" y="25.0" type="dead_end"/>
+</nodes>

@@ -92,4 +92,37 @@ BLOCKAGE = Environment(
     ),
 )
 
-ENVIRONMENTS: dict[str, Environment] = {e.name: e for e in (DIVERGE, MERGE, BLOCKAGE)}
+# --- 環境⑤ MD-2 両側織込み（4車線 WeaveZone: lane0=加速車線(下)・lane1-3=本線、top本線 lane3→出口(上)）---
+WEAVE2 = Environment(
+    name="weave2",
+    sumocfg="../config/v2/weave2/weave2.sumocfg",
+    mainlane_edge="WeaveZone",
+    mainlane_length=2300.0,  # 加速車線drop＝出口分岐位置＝締切
+    groups=(
+        # 直進（必須LCなし）。本線 lane1-3
+        Group(name="through", route="r_main", weight=1.0, depart_lanes=(1, 2, 3)),
+        # 合流（加速車線 lane0 → 本線 lane1 へ）
+        Group(name="merging", route="r_main", weight=1.0, target_lane=1, deadline_pos=2300.0, depart_lanes=(0,)),
+        # 分流（本線 lane1/2 → top lane3 → 出口へ）。merge と逆向きに横断＝織込み
+        Group(name="diverging", route="r_exit", weight=1.0, target_lane=3, deadline_pos=2300.0, depart_lanes=(1, 2)),
+    ),
+)
+
+# --- 環境④ MD-1f 織込み（補助車線、一側）。WeaveZone 3車線: lane0=補助車線・lane1,2=本線2車線。---
+# 補助車線(lane0)は端で出口(decel)へ。合流車は lane0→lane1 へ抜け、分流車は lane1,2→lane0 へ降りる＝逆向き織込み。
+WEAVE = Environment(
+    name="weave",
+    sumocfg="../config/v2/weave/weave.sumocfg",
+    mainlane_edge="WeaveZone",
+    mainlane_length=2000.0,
+    groups=(
+        # 直進（必須LCなし）。本線 lane1,2
+        Group(name="through", route="r_main", weight=1.0, depart_lanes=(1, 2)),
+        # 合流（補助車線 lane0 → 本線 lane1 へ抜ける。lane0 は出口へ繋がるため抜けないと本線へ行けない）
+        Group(name="merging", route="r_main", weight=1.0, target_lane=1, deadline_pos=2000.0, depart_lanes=(0,)),
+        # 分流（本線 lane1,2 → 補助車線 lane0 へ降りて出口）。merge と逆向き＝織込み
+        Group(name="diverging", route="r_exit", weight=1.0, target_lane=0, deadline_pos=2000.0, depart_lanes=(1, 2)),
+    ),
+)
+
+ENVIRONMENTS: dict[str, Environment] = {e.name: e for e in (DIVERGE, MERGE, BLOCKAGE, WEAVE2, WEAVE)}
