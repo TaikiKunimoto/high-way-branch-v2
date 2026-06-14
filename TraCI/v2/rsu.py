@@ -53,6 +53,8 @@ def _find_provider(
         o = snap.obs[vid]
         if o.lane_pos is None or o.lane_pos >= req.current_pos:
             continue  # 後続（自分より後ろ）のみ
+        if o.is_obstacle:
+            continue  # 障害物（停止車両）は gap を作れないので提供車にしない
         if vid in claimed:
             continue  # 占有印（横取り禁止）
         other_key = request_key.get(vid)

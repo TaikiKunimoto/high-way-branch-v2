@@ -38,16 +38,19 @@ class Environment:
         """総流入 Q と必須LC比率 f を、グループ別の流入量[veh/h]に展開する（グループ定義順を保持）。
 
         必須LC車（target_lane!=None）を全体の f、through 車を (1−f) とし、同種グループ間は weight で内分する。
-        単一要素環境（through+必須LC1種）なら f がそのまま必須LC比率になる。
+        単一要素環境（through+必須LC1種）なら f がそのまま必須LC比率になる。必須LCグループが無い環境
+        （straight 等。障害物は --obstacle で動的付与）では f を無視し全車を through にする。
         """
+        has_mlc = any(g.target_lane is not None for g in self.groups)
+        f = mlc_ratio if has_mlc else 0.0
         mlc_weight = sum(g.weight for g in self.groups if g.target_lane is not None) or 1.0
         through_weight = sum(g.weight for g in self.groups if g.target_lane is None) or 1.0
         rates: list[tuple[Group, float]] = []
         for g in self.groups:
             if g.target_lane is not None:
-                rates.append((g, total_inflow * mlc_ratio * (g.weight / mlc_weight)))
+                rates.append((g, total_inflow * f * (g.weight / mlc_weight)))
             else:
-                rates.append((g, total_inflow * (1.0 - mlc_ratio) * (g.weight / through_weight)))
+                rates.append((g, total_inflow * (1.0 - f) * (g.weight / through_weight)))
         return rates
 
 
@@ -77,19 +80,14 @@ MERGE = Environment(
     ),
 )
 
-# --- 環境③ S-B1 単一障害物（中央車線 Lane1 を停止車両で封鎖。封鎖車線の車は左右どちらかへ必須回避）---
-BLOCKAGE = Environment(
-    name="blockage",
-    sumocfg="../config/v2/blockage/blockage.sumocfg",
+# --- 環境③ 素地 = 直進3車線（straight）。障害物Bは --obstacle で動的に発生させる（突発タイミング＝パラメータ）---
+# 例: env③ S-B1 = `--env straight --obstacle 1,1500,80`（Lane1・pos1500・t80 で停止車両を発生）
+STRAIGHT = Environment(
+    name="straight",
+    sumocfg="../config/v2/straight/straight.sumocfg",
     mainlane_edge="Road",
-    mainlane_length=1500.0,  # 障害物位置 ＝ 締切
-    groups=(
-        # 直進（必須LCなし）。Lane0/2（Lane1 は封鎖）
-        Group(name="through", route="r_main", weight=1.0, depart_lanes=(0, 2)),
-        # 封鎖車線(Lane1)の車を左右に半々で回避させる（各 single-target）
-        Group(name="evade_right", route="r_main", weight=1.0, target_lane=0, deadline_pos=1500.0, depart_lanes=(1,)),
-        Group(name="evade_left", route="r_main", weight=1.0, target_lane=2, deadline_pos=1500.0, depart_lanes=(1,)),
-    ),
+    mainlane_length=2500.0,
+    groups=(Group(name="through", route="r_main", weight=1.0),),  # 全車 through（必須LCは障害物で動的付与）
 )
 
 # --- 環境⑤ MD-2 両側織込み（4車線 WeaveZone: lane0=加速車線(下)・lane1-3=本線、top本線 lane3→出口(上)）---
@@ -125,4 +123,4 @@ WEAVE = Environment(
     ),
 )
 
-ENVIRONMENTS: dict[str, Environment] = {e.name: e for e in (DIVERGE, MERGE, BLOCKAGE, WEAVE2, WEAVE)}
+ENVIRONMENTS: dict[str, Environment] = {e.name: e for e in (DIVERGE, MERGE, STRAIGHT, WEAVE2, WEAVE)}

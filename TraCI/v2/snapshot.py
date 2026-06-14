@@ -26,6 +26,7 @@ class VehObs:
     lane_pos: float | None
     speed: float
     activation_time: float | None
+    is_obstacle: bool  # 障害物（停止車両）。安全判定では回避対象だが、提供車には選ばない
 
 
 @dataclass(frozen=True)
@@ -46,7 +47,9 @@ def capture(vehicles: "list[V2CAV]", sim_time: float, mainlane_edge: str) -> Sna
     lane_members: dict[str, list[str]] = {}
     for veh in vehicles:
         p = veh.params
-        obs[p.id] = VehObs(p.id, p.target_lane, p.deadline_pos, p.road, p.lane, p.lane_pos, p.speed, p.activation_time)
+        obs[p.id] = VehObs(
+            p.id, p.target_lane, p.deadline_pos, p.road, p.lane, p.lane_pos, p.speed, p.activation_time, p.is_obstacle
+        )
         if p.road == mainlane_edge and p.lane is not None:
             lane_members.setdefault(f"{p.road}_{p.lane}", []).append(p.id)
     for ids in lane_members.values():

@@ -1,7 +1,0 @@
-<routes>
-    <vType id="CAV" accel="10.0" decel="5.0" maxSpeed="27" length="5" speedFactor="1.0" speedDev="0.0"/>
-    <route id="r_main" edges="Road"/>
-    <vehicle id="obstacle" type="CAV" route="r_main" depart="0.00" departLane="1" departPos="1490" departSpeed="0">
-        <stop lane="Road_1" startPos="1490" endPos="1500" duration="100000"/>
-    </vehicle>
-</routes>

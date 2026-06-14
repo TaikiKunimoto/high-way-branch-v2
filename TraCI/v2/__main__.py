@@ -32,15 +32,30 @@ SIMULATION_TIME: float = 600.0  # シミュレーション時間[s]
 
 
 def _start_sim(sumo_binary: str, sumocfg: str) -> None:
-    traci.start([sumo_binary, "-c", sumocfg])
+    # --time-to-teleport -1: 全制御を traci で行うため SUMO の jam-teleport を無効化
+    # （障害物=停止車両が除去されない／stuck 車は running として残り失敗信号が明確になる）
+    traci.start([sumo_binary, "-c", sumocfg, "--time-to-teleport", "-1"])
     print("Simulation started")
 
 
 def _get_options() -> tuple[optparse.Values, list[str]]:
-    parser = optparse.OptionParser(usage="python -m v2 <seed> <inflow> <mlc_ratio> [--env NAME] [--nogui]")
+    parser = optparse.OptionParser(
+        usage="python -m v2 <seed> <inflow> <mlc_ratio> [--env NAME] [--obstacle L,P,T] [--nogui]"
+    )
     parser.add_option("--env", dest="env", default="diverge", help="evaluation environment name (default: diverge)")
+    parser.add_option(
+        "--obstacle", dest="obstacle", default=None, help="dynamic obstacle as 'lane,pos,time' (突発障害物)"
+    )
     parser.add_option("--nogui", action="store_true", default=False, help="run the commandline version of sumo")
     return parser.parse_args()
+
+
+def _parse_obstacle(spec: str | None) -> tuple[int, float, float] | None:
+    """--obstacle 'lane,pos,time' をパースする。任意のどの環境にも掛けられる突発障害物パラメータ。"""
+    if spec is None:
+        return None
+    lane, pos, time = spec.split(",")
+    return (int(lane), float(pos), float(time))
 
 
 def _create_file_name(env_name: str, total_inflow: float, mlc_ratio: float, seed: str) -> str:
@@ -63,7 +78,9 @@ if __name__ == "__main__":
     filename = _create_file_name(env.name, total_inflow, mlc_ratio, seed)
     stats = SimulationStatistics(filename=filename, output_dir=OUTPUT_DIR)
 
+    obstacle = _parse_obstacle(options.obstacle)
+
     sumo_binary = checkBinary("sumo" if options.nogui else "sumo-gui")
     _start_sim(sumo_binary, env.sumocfg)
     state = V2SimulationState(SIMULATION_TIME, env)
-    run(state, total_inflow, mlc_ratio, stats, seed)
+    run(state, total_inflow, mlc_ratio, stats, seed, obstacle)

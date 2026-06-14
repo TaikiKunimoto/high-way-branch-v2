@@ -67,9 +67,17 @@ class V2SimulationState:
 
 
 def run(
-    state: V2SimulationState, total_inflow: float, mlc_ratio: float, stats: SimulationStatistics, seed: str
+    state: V2SimulationState,
+    total_inflow: float,
+    mlc_ratio: float,
+    stats: SimulationStatistics,
+    seed: str,
+    obstacle: tuple[int, float, float] | None = None,
 ) -> None:
     _set_environment(state, total_inflow, mlc_ratio)
+    # 突発障害物 (lane, pos, appear_time)。発生後、本線レーン数はエスカレーションの回避先選択に使う
+    obstacle_num_lanes = traci.edge.getLaneNumber(state.env.mainlane_edge) if obstacle is not None else 0
+    obstacle_placed_pos: float | None = None
 
     last_recorded_second = -1
     tail_position_list: list[tuple[float, float]] = []
@@ -145,6 +153,15 @@ def run(
 
             if veh.params.leader_distance is not None and veh.params.leader_speed is not None:
                 stats.calculate_TTC(veh.params.leader_distance, veh.params.leader_speed, veh.params.speed)
+
+        # --- 突発障害物。指定時刻に到達したら 本線で指定レーン・位置に最も近い1台を停止＝障害物にする ---
+        if obstacle is not None and obstacle_placed_pos is None and current_time >= obstacle[2]:
+            obstacle_placed_pos = _place_obstacle(active, state.env.mainlane_edge, obstacle[0], obstacle[1])
+        # 障害物より後方・同一レーンの through 車に必須LC（回避）を動的付与＝エスカレーション（コア機構 §4）
+        if obstacle is not None and obstacle_placed_pos is not None:
+            _escalate_for_obstacle(
+                active, state.env.mainlane_edge, obstacle[0], obstacle_placed_pos, obstacle_num_lanes
+            )
 
         # --- 毎Tc 2フェーズ調停。Phase A（鍵計算）→ Phase B（割当＋役割付与）。Layer2 実行は制御後に行う ---
         tc_accumulator += TIME_STEP
@@ -237,6 +254,41 @@ def _accumulate_exit_stats(
             stats.calculate_travel_time("r_exit", p.departure_time, p.arrival_time)
         stats.calculate_vehicle_average_speed("r_exit", p.speed_history)
         r_exit_exited.append(p.id)
+
+
+def _place_obstacle(active: list[V2CAV], edge: str, lane: int, pos: float) -> float | None:
+    """本線 edge の指定レーンで指定位置に最も近い走行中CAVを停止＝障害物にする。停止位置を返す（候補なしは None）。"""
+    candidates = [
+        v
+        for v in active
+        if v.params.road == edge
+        and v.params.lane == lane
+        and v.params.lane_pos is not None
+        and not v.params.is_obstacle
+    ]
+    if not candidates:
+        return None
+    chosen = min(candidates, key=lambda v: (abs((v.params.lane_pos or 0.0) - pos), int(v.params.id)))
+    chosen.make_obstacle()
+    print(f"[obstacle] veh={chosen.params.id} edge={edge} lane={lane} pos={chosen.params.lane_pos:.1f}")
+    return chosen.params.lane_pos
+
+
+def _escalate_for_obstacle(active: list[V2CAV], edge: str, lane: int, obstacle_pos: float, num_lanes: int) -> None:
+    """障害物より後方・同一レーンの必須LCなし車に、隣の空きレーンへの回避を動的付与する（エスカレーション）。"""
+    for veh in active:
+        p = veh.params
+        if p.is_obstacle or p.road != edge or p.lane != lane or p.lane_pos is None:
+            continue
+        if p.lane_pos >= obstacle_pos or p.target_lane is not None:
+            continue  # 障害物より前、または既に必須LCを持つ車（合流/分流）は対象外
+        down_ok = lane - 1 >= 0
+        up_ok = lane + 1 < num_lanes
+        if down_ok and up_ok:
+            p.target_lane = lane - 1 if int(p.id) % 2 == 0 else lane + 1  # id偶奇で左右に振り分け
+        else:
+            p.target_lane = lane - 1 if down_ok else lane + 1
+        p.deadline_pos = obstacle_pos
 
 
 def _update_activation(veh: V2CAV, mainlane_edge: str) -> None:

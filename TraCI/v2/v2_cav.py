@@ -48,9 +48,11 @@ class V2CAVParams(BaseModel):
     id: str
     type_id: str | None = None
     route: str | None = None  # SUMO ルート（net を通すための経路。機構は参照しない）
-    # 必須LC仕様（環境が生成時に与える）。target_lane=None なら必須LCなし（through 車）。
+    # 必須LC仕様（環境が生成時に与える / 障害物エスカレーションで動的付与）。target_lane=None なら必須LCなし。
     target_lane: int | None = None
     deadline_pos: float | None = None
+    # 障害物（突発）: True の車は停止し続け、調停（要求・提供）から除外される。snapshot には載る（安全判定で回避）。
+    is_obstacle: bool = False
     road: str | None = None
     lane_id: str | None = None
     lane: int | None = None
@@ -107,6 +109,13 @@ class V2CAV:
     def record_arrival_time(self) -> None:
         self.params.arrival_time = get_sim_time()
 
+    def make_obstacle(self) -> None:
+        """この車を障害物（突発）にする。停止し、必須LC要求を持たず、調停から外れる。"""
+        self.params.is_obstacle = True
+        self.params.target_lane = None
+        self.params.deadline_pos = None
+        traci.vehicle.setSpeed(self.params.id, 0.0)
+
     # --- 状態観測 ---
     def update_observation(self) -> None:
         """毎step、自車の観測値を traci から取得して params を更新する。"""
@@ -129,6 +138,9 @@ class V2CAV:
     def control_speed(self) -> None:
         """前方車両との車間に応じた速度制御。SUMO の安全制御は無効化済みのため自前で行う。"""
         p = self.params
+        if p.is_obstacle:
+            traci.vehicle.setSpeed(p.id, 0.0)  # 障害物は停止し続ける
+            return
         if p.leader_distance is not None and p.leader_distance < MIN_GAP:
             if p.leader_speed is not None:
                 self._emergency_brake(p.leader_speed)
