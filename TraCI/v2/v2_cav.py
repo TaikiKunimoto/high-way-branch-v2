@@ -115,8 +115,8 @@ class V2CAV(BaseModel):
         stats.calculate_vehicle_average_speed("", self.speed_history)
 
     def active_operation(self) -> LCOperation | None:
-        """未達成（lane != target_lane）の操作のうち、最も deadline が近いものを返す（なければ None）。"""
-        pending = [op for op in self.operations if op.target_lane != self.lane]
+        """未完了（is_done が False）の操作のうち、最も deadline が近いものを返す（なければ None）。"""
+        pending = [op for op in self.operations if not op.is_done(self.lane, self.lane_pos)]
         if not pending:
             return None
         return min(pending, key=lambda op: op.deadline_pos)
