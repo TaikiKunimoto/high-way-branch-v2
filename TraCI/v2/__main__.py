@@ -51,10 +51,7 @@ def _get_options() -> tuple[optparse.Values, list[str]]:
 
 
 def _parse_obstacle(spec: str | None) -> tuple[int, float, float] | None:
-    """--obstacle 'lane,pos,time' をパースする。任意のどの環境にも掛けられる突発障害物パラメータ。
-
-    想定外の入力は黙って通さず、何が悪いかを示して即 raise する（デバッグ容易化）。
-    """
+    """--obstacle 'lane,pos,time' をパースする。任意のどの環境にも掛けられる突発障害物パラメータ。"""
     if spec is None:
         return None
     parts = spec.split(",")
@@ -73,16 +70,22 @@ def _create_file_name(env_name: str, total_inflow: float, mlc_ratio: float, seed
 
 if __name__ == "__main__":
     options, positional = _get_options()
+    usage = "usage: python -m v2 <seed> <inflow> <mlc_ratio> [--env NAME] [--obstacle L,P,T] [--nogui]"
     if len(positional) < 3:
-        sys.exit("usage: python -m v2 <seed> <inflow> <mlc_ratio> [--env NAME] [--nogui]")
+        sys.exit(f"位置引数が不足しています（必要3: seed inflow mlc_ratio／受け取り {len(positional)} 個）\n{usage}")
     seed = positional[0]  # 乱数シード
     random.seed(seed)
-    total_inflow = float(positional[1])  # 総流入量 Q [veh/h]
-    mlc_ratio = float(positional[2])  # 必須LC車の比率 f（0..1）
+    try:
+        total_inflow = float(positional[1])  # 総流入量 Q [veh/h]
+        mlc_ratio = float(positional[2])  # 必須LC車の比率 f（0..1）
+    except ValueError:
+        sys.exit(
+            f"inflow と mlc_ratio は数値で指定してください（受け取り: {positional[1]!r}, {positional[2]!r}）\n{usage}"
+        )
 
     env = ENVIRONMENTS.get(options.env)
     if env is None:
-        sys.exit(f"unknown env '{options.env}'. available: {', '.join(ENVIRONMENTS)}")
+        sys.exit(f"不明な --env '{options.env}'（利用可能: {', '.join(ENVIRONMENTS)}）")
 
     filename = _create_file_name(env.name, total_inflow, mlc_ratio, seed)
     stats = SimulationStatistics(filename=filename, output_dir=OUTPUT_DIR)
