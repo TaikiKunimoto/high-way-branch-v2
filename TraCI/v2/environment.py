@@ -54,7 +54,7 @@ class Environment:
 # --- 環境① S-D 単一分流 ---
 DIVERGE = Environment(
     name="diverge",
-    sumocfg="../config/v2/diverge.sumocfg",
+    sumocfg="../config/v2/diverge/diverge.sumocfg",
     mainlane_edge="MainLane1",
     mainlane_length=2500.0,
     groups=(
@@ -66,7 +66,7 @@ DIVERGE = Environment(
 # --- 環境② S-M 単一合流（始端の加速車線=MergeZone_0 が drop。加速車線の車は Lane1 へ必須合流）---
 MERGE = Environment(
     name="merge",
-    sumocfg="../config/v2/merge.sumocfg",
+    sumocfg="../config/v2/merge/merge.sumocfg",
     mainlane_edge="MergeZone",
     mainlane_length=200.0,  # 加速車線が消える位置 ＝ 締切
     groups=(
@@ -77,4 +77,19 @@ MERGE = Environment(
     ),
 )
 
-ENVIRONMENTS: dict[str, Environment] = {DIVERGE.name: DIVERGE, MERGE.name: MERGE}
+# --- 環境③ S-B1 単一障害物（中央車線 Lane1 を停止車両で封鎖。封鎖車線の車は左右どちらかへ必須回避）---
+BLOCKAGE = Environment(
+    name="blockage",
+    sumocfg="../config/v2/blockage/blockage.sumocfg",
+    mainlane_edge="Road",
+    mainlane_length=1500.0,  # 障害物位置 ＝ 締切
+    groups=(
+        # 直進（必須LCなし）。Lane0/2（Lane1 は封鎖）
+        Group(name="through", route="r_main", weight=1.0, depart_lanes=(0, 2)),
+        # 封鎖車線(Lane1)の車を左右に半々で回避させる（各 single-target）
+        Group(name="evade_right", route="r_main", weight=1.0, target_lane=0, deadline_pos=1500.0, depart_lanes=(1,)),
+        Group(name="evade_left", route="r_main", weight=1.0, target_lane=2, deadline_pos=1500.0, depart_lanes=(1,)),
+    ),
+)
+
+ENVIRONMENTS: dict[str, Environment] = {e.name: e for e in (DIVERGE, MERGE, BLOCKAGE)}
