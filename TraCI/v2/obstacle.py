@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict
 
+from v2.lc_request import LCOperation
+
 if TYPE_CHECKING:
     from v2.v2_cav import V2CAV
 
@@ -82,17 +84,36 @@ class Obstacle(BaseModel):
         return None, None
 
     def escalate(self, active: "list[V2CAV]", edge: str, obstacle_pos: float, num_lanes: int) -> None:
-        """障害物より後方・同一レーンの必須LCなし車に、隣の空きレーンへの回避を動的付与する（エスカレーション）。"""
+        """障害物より後方・同一レーンの車に、隣レーンへの回避操作を append する（through も既存MLC車も対象）。
+
+        回避先は「最終目的地に近い方向」の隣レーン。元の必須LC操作は上書きせず保持され、回避操作（deadline=
+        obstacle_pos）が deadline 最短となって先に処理される。最終目的地が障害物レーンそのものなら回避不能＝
+        待機（append しない）。毎step呼ばれるため、同じ障害物の回避操作を既に持つ車は skip（重複防止）。
+        """
         for veh in active:
             if veh.is_obstacle or veh.road != edge or veh.lane != self.lane or veh.lane_pos is None:
                 continue
-            if veh.lane_pos >= obstacle_pos or veh.target_lane is not None:
-                continue  # 障害物より前、または既に必須LCを持つ車（合流/分流）は対象外
-            down_ok = self.lane - 1 >= 0
-            up_ok = self.lane + 1 < num_lanes
-            # TODO: 適切な振り分けアルゴリズムを考案する
+            if veh.lane_pos >= obstacle_pos:
+                continue  # 障害物より前
+            if any(op.deadline_pos == obstacle_pos for op in veh.operations):
+                continue  # この障害物の回避操作は付与済み
+            avoid_lane = self._avoid_lane(veh, num_lanes)
+            if avoid_lane is None:
+                continue  # 回避先なし（最終目的地＝障害物レーン or 隣が範囲外）＝待機
+            veh.operations.append(LCOperation(target_lane=avoid_lane, deadline_pos=obstacle_pos))
+
+    def _avoid_lane(self, veh: "V2CAV", num_lanes: int) -> int | None:
+        """障害物レーンから「最終目的地に近い方向」の隣レーンを返す（回避不能なら None）。"""
+        down, up = self.lane - 1, self.lane + 1
+        down_ok, up_ok = down >= 0, up < num_lanes
+        # 最終目的地 = 最も deadline が遠い操作の target_lane（操作がなければ through 車）
+        final_target = max(veh.operations, key=lambda op: op.deadline_pos).target_lane if veh.operations else None
+        if final_target is None:  # through 車: 空き側、両側可なら id 偶奇で振り分け（従来挙動）
             if down_ok and up_ok:
-                veh.target_lane = self.lane - 1 if int(veh.id) % 2 == 0 else self.lane + 1  # id偶奇で左右に振り分け
-            else:
-                veh.target_lane = self.lane - 1 if down_ok else self.lane + 1
-            veh.deadline_pos = obstacle_pos
+                return down if int(veh.id) % 2 == 0 else up
+            return down if down_ok else (up if up_ok else None)
+        if final_target == self.lane:
+            return None  # 最終目的地が障害物レーン → 回避不能（待機）
+        if final_target > self.lane:
+            return up if up_ok else None
+        return down if down_ok else None

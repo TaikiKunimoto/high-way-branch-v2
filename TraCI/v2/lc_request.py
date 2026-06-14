@@ -15,6 +15,24 @@ from v2.constants import ACTIVATION_MARGIN
 from v2.snapshot import Snapshot, VehObs
 
 
+class LCOperation(BaseModel):
+    """車が完了すべき必須LC操作1つ（目標レーン・締切＋早め固定活性化の状態）。非frozen（活性化状態が変わる）。
+
+    車は複数の操作を ``V2CAV.operations`` リストで持ち、未達成（lane != target_lane）のうち最も deadline が
+    近い操作をアクティブとして要求を出す。突発障害物の回避もこのリストへ1操作 append され、元の必須LCは保持される。
+    活性化状態（activated/activation_time）を内包し、待ち時間は wait_time() で求める（散在していた情報を集約）。
+    """
+
+    target_lane: int
+    deadline_pos: float  # 締切位置 D
+    activated: bool = False  # 活性化窓に初めて入ったら True（早め固定活性化、一度だけ）
+    activation_time: float | None = None  # 活性化時刻（待ち時間の起点）
+
+    def wait_time(self, sim_time: float) -> float:
+        """活性化からの経過（EDF鍵の第2要素。未活性なら 0）。"""
+        return sim_time - self.activation_time if self.activation_time is not None else 0.0
+
+
 class LCRequest(BaseModel):
     """1要求車の必須LC要求。観測値（VehObs）から ``from_obs`` / ``build_all`` で生成する。"""
 
