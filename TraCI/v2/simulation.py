@@ -5,7 +5,6 @@
 ``custom.py`` の run() を踏襲しつつ V2CAV を用い、タイムスペース図(matplotlib)出力は省略する。
 """
 
-import csv
 from datetime import datetime
 import os
 import random
@@ -17,17 +16,12 @@ from simulationStatistics.simulation_statistics import SimulationStatistics
 from utils.traci_wrapper import (
     get_colliding_veh_id_list,
     get_edge_lane_number,
-    get_lane_last_step_veh_ids,
     get_sim_arrived_veh_id_list,
     get_sim_departed_veh_id_list,
     get_sim_time,
     get_veh_id_list,
-    get_veh_lane_position,
-    get_veh_speed,
 )
 from v2.constants import (
-    CONGESTION_SPEED,
-    MIN_CONGESTED_VEHICLES,
     TC,
     TIME_STEP,
 )
@@ -86,10 +80,6 @@ class V2Simulation(BaseModel):
         if self.obstacle is not None:
             self.obstacle.validate_for(self.env.mainlane_edge, obstacle_num_lanes, self.env.mainlane_length)
 
-        last_recorded_second = -1
-        tail_position_list: list[tuple[float, float]] = []
-        max_tail_position = 0.0
-
         r_pass_departed: list[str] = []
         r_exit_departed: list[str] = []
         r_pass_exited: list[str] = []
@@ -113,14 +103,8 @@ class V2Simulation(BaseModel):
             departed_list = get_sim_departed_veh_id_list()  # 直近stepで投入された（出発した）車両ID
             running_list = get_veh_id_list()  # 現在ネットワーク上を走行中の全車両ID
 
-            # tail position の記録（タイムスペース指標用）
             current_time = get_sim_time()
             current_sec = int(current_time)
-            if current_sec != last_recorded_second:
-                tail_pos = self.env.mainlane_length - self._get_congestion_point()
-                tail_position_list.append((current_time, tail_pos))
-                max_tail_position = max(max_tail_position, tail_pos)
-                last_recorded_second = current_sec
 
             # --- 到着/未発進/出発処理 と 観測。全車を先に観測し、スナップショット S_t の一貫性を保つ ---
             poplist: list[int] = []  # このstepで到着し self.vehicles から削除する要素インデックス
@@ -233,7 +217,6 @@ class V2Simulation(BaseModel):
         print(f"Phase B: Tc rounds with double-assigned providers (should be 0): {double_assign_events}")
         print(f"Layer2: total instant lane changes executed: {total_lc}")
         total_collisions, total_involved = self._print_collision_summary()
-        self._write_tail_csv(tail_position_list)
 
         results = {
             "total_generated_vehicle": self.veh_id,
@@ -249,7 +232,6 @@ class V2Simulation(BaseModel):
             "traffic_volume": len(self.total_departed) * (3600 / self.simulation_time),
             "total_collisions": total_collisions,
             "total_vehicles_involved": total_involved,
-            "max_tail_position": max_tail_position,
         }
         stats.add_result(self.simulation_time, self.seed, self.inflow_through, self.inflow_mlc, results)
         traci.close()
@@ -312,24 +294,6 @@ class V2Simulation(BaseModel):
                 queue.remove(veh_id)
                 return
 
-    def _get_congestion_point(self) -> float:
-        """目標車線で連続 MIN_CONGESTED_VEHICLES 台が低速なら、その末尾位置を渋滞末尾とみなす（tail 指標用）。"""
-        lane2_vehicles = get_lane_last_step_veh_ids(f"{self.env.mainlane_edge}_2")
-        if len(lane2_vehicles) < MIN_CONGESTED_VEHICLES:
-            return self.env.mainlane_length
-
-        sorted_vehicles = sorted(lane2_vehicles, key=get_veh_lane_position, reverse=True)
-        congested_sequence: list[str] = []
-        tail_position = self.env.mainlane_length
-        for vid in sorted_vehicles:
-            if get_veh_speed(vid) <= CONGESTION_SPEED:
-                congested_sequence.append(vid)
-                if len(congested_sequence) >= MIN_CONGESTED_VEHICLES:
-                    tail_position = get_veh_lane_position(congested_sequence[-1])
-            else:
-                congested_sequence = []
-        return tail_position
-
     def _check_collision(self) -> None:
         """衝突を検出して記録（重複記録は抑制）。"""
         colliding_ids: list[str] = get_colliding_veh_id_list()
@@ -370,10 +334,3 @@ class V2Simulation(BaseModel):
         for time_val, vehicles in self.collision_history:
             print(f"Time {time_val:.1f}: Collision between vehicles: {', '.join(vehicles)}")
         return total_collisions, total_vehicles_involved
-
-    def _write_tail_csv(self, tail_position_list: list[tuple[float, float]]) -> None:
-        tail_csv = f"{OUTPUT_DIR}/tail_positions_{self.env.name}_through{self.inflow_through}_mlc{self.inflow_mlc}_seed{self.seed}.csv"
-        with open(tail_csv, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["time", "tail_position"])
-            writer.writerows(tail_position_list)
