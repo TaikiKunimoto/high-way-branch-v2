@@ -10,7 +10,7 @@ import random
 import sys
 from typing import Any, Optional
 
-from cav.simple_cav import SimpleCAV
+from v1.cav.simple_cav import SimpleCAV
 import matplotlib.pyplot as plt
 from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
@@ -231,7 +231,7 @@ def run(inflow_pass: int, inflow_exit: int) -> None:
 
 # シミュレーションを開始する
 def _startSim() -> None:
-    traci.start([sumoBinary, "-c", "../config/high-way.sumocfg"])
+    traci.start([sumoBinary, "-c", "../config/v1/high-way.sumocfg"])
     print("Simulation started")
 
 

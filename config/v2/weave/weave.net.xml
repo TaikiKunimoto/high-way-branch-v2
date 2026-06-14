@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2026-06-14T17:46:31.106115+09:00 by Eclipse SUMO netconvert 1.27.0
+<netconvertConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netconvertConfiguration.xsd">
+
+    <input>
+        <node-files value="weave.nod.xml"/>
+        <edge-files value="weave.edg.xml"/>
+        <connection-files value="weave.con.xml"/>
+    </input>
+
+    <output>
+        <output-file value="weave.net.xml"/>
+    </output>
+
+</netconvertConfiguration>
+-->
+
+<net version="1.20" junctionCornerDetail="5" limitTurnSpeed="5.50" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/net_file.xsd">
+
+    <location netOffset="0.00,25.00" convBoundary="0.00,0.00,2200.00,25.00" origBoundary="0.00,-25.00,2200.00,0.00" projParameter="!"/>
+
+    <edge id=":WeaveEnd_0" function="internal">
+        <lane id=":WeaveEnd_0_0" index="0" speed="16.67" length="3.38" shape="2023.71,17.00 2024.71,16.99 2025.40,16.95 2026.07,16.83 2027.05,16.59"/>
+    </edge>
+    <edge id=":WeaveEnd_1" function="internal">
+        <lane id=":WeaveEnd_1_0" index="0" speed="27.78" length="3.39" shape="2023.71,20.20 2027.10,20.20"/>
+        <lane id=":WeaveEnd_1_1" index="1" speed="27.78" length="3.39" shape="2023.71,23.40 2027.10,23.40"/>
+    </edge>
+
+    <edge id="ExitLane" from="WeaveEnd" to="Exit" priority="-1">
+        <lane id="ExitLane_0" index="0" speed="5.56" length="74.80" shape="2027.05,16.59 2099.61,-1.55"/>
+    </edge>
+    <edge id="MainEnd" from="WeaveEnd" to="End" priority="-1">
+        <lane id="MainEnd_0" index="0" speed="27.78" length="172.90" shape="2027.10,20.20 2200.00,20.20"/>
+        <lane id="MainEnd_1" index="1" speed="27.78" length="172.90" shape="2027.10,23.40 2200.00,23.40"/>
+    </edge>
+    <edge id="WeaveZone" from="Start" to="WeaveEnd" priority="-1">
+        <lane id="WeaveZone_0" index="0" speed="27.78" length="2023.71" shape="-0.00,17.00 2023.71,17.00"/>
+        <lane id="WeaveZone_1" index="1" speed="27.78" length="2023.71" shape="-0.00,20.20 2023.71,20.20"/>
+        <lane id="WeaveZone_2" index="2" speed="27.78" length="2023.71" shape="-0.00,23.40 2023.71,23.40"/>
+    </edge>
+
+    <junction id="End" type="dead_end" x="2200.00" y="25.00" incLanes="MainEnd_0 MainEnd_1" intLanes="" shape="2200.00,18.60 2200.00,25.00"/>
+    <junction id="Exit" type="dead_end" x="2100.00" y="0.00" incLanes="ExitLane_0" intLanes="" shape="2099.22,-3.10 2100.00,0.00"/>
+    <junction id="Start" type="dead_end" x="0.00" y="25.00" incLanes="" intLanes="" shape="-0.00,25.00 -0.00,15.40"/>
+    <junction id="WeaveEnd" type="priority" x="2000.00" y="25.00" incLanes="WeaveZone_0 WeaveZone_1 WeaveZone_2" intLanes=":WeaveEnd_0_0 :WeaveEnd_1_0 :WeaveEnd_1_1" shape="2027.10,25.00 2027.10,18.60 2027.44,18.14 2026.66,15.04 2025.58,15.29 2025.20,15.35 2024.81,15.39 2024.34,15.40 2023.71,15.40 2023.71,25.00">
+        <request index="0" response="000" foes="000" cont="0"/>
+        <request index="1" response="000" foes="000" cont="0"/>
+        <request index="2" response="000" foes="000" cont="0"/>
+    </junction>
+
+    <connection from="WeaveZone" to="ExitLane" fromLane="0" toLane="0" via=":WeaveEnd_0_0" dir="R" state="M"/>
+    <connection from="WeaveZone" to="MainEnd" fromLane="1" toLane="0" via=":WeaveEnd_1_0" dir="s" state="M"/>
+    <connection from="WeaveZone" to="MainEnd" fromLane="2" toLane="1" via=":WeaveEnd_1_1" dir="s" state="M"/>
+
+    <connection from=":WeaveEnd_0" to="ExitLane" fromLane="0" toLane="0" dir="R" state="M"/>
+    <connection from=":WeaveEnd_1" to="MainEnd" fromLane="0" toLane="0" dir="s" state="M"/>
+    <connection from=":WeaveEnd_1" to="MainEnd" fromLane="1" toLane="1" dir="s" state="M"/>
+
+</net>

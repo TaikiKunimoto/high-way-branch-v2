@@ -1,0 +1,4 @@
+<edges>
+    <edge id="MergeZone" from="Start" to="AccelEnd" numLanes="4" speed="27.78"/>
+    <edge id="MainLane" from="AccelEnd" to="End" numLanes="3" speed="27.78"/>
+</edges>

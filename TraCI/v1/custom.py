@@ -10,7 +10,7 @@ import random
 import sys
 from typing import Any
 
-from cav.custom_cav import CustomCAV
+from v1.cav.custom_cav import CustomCAV
 import matplotlib.pyplot as plt
 from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
@@ -210,7 +210,7 @@ def run(
 
 
 def _start_sim(sumoBinary: str) -> None:
-    traci.start([sumoBinary, "-c", "../config/high-way.sumocfg"])
+    traci.start([sumoBinary, "-c", "../config/v1/high-way.sumocfg"])
     print("Simulation started")
 
 

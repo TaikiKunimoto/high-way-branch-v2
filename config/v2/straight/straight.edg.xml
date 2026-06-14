@@ -1,0 +1,3 @@
+<edges>
+    <edge id="Road" from="Start" to="End" numLanes="3" speed="27.78"/>
+</edges>

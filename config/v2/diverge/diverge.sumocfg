@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sumoConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+    <input>
+        <net-file value="diverge.net.xml"/>
+        <route-files value="diverge.rou.xml"/>
+        <gui-settings-file value="diverge.view.xml"/>
+    </input>
+    <time>
+        <step-length value="0.1"/>
+        <begin value="0.0"/>
+        <end value="6000.0"/>
+    </time>
+</sumoConfiguration>
