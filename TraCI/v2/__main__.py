@@ -51,11 +51,20 @@ def _get_options() -> tuple[optparse.Values, list[str]]:
 
 
 def _parse_obstacle(spec: str | None) -> tuple[int, float, float] | None:
-    """--obstacle 'lane,pos,time' をパースする。任意のどの環境にも掛けられる突発障害物パラメータ。"""
+    """--obstacle 'lane,pos,time' をパースする。任意のどの環境にも掛けられる突発障害物パラメータ。
+
+    想定外の入力は黙って通さず、何が悪いかを示して即 raise する（デバッグ容易化）。
+    """
     if spec is None:
         return None
-    lane, pos, time = spec.split(",")
-    return (int(lane), float(pos), float(time))
+    parts = spec.split(",")
+    if len(parts) != 3:
+        raise ValueError(f"--obstacle は 'lane,pos,time' の3値で指定してください（受け取り: {spec!r}）")
+    lane_s, pos_s, time_s = parts
+    try:
+        return (int(lane_s), float(pos_s), float(time_s))
+    except ValueError as e:
+        raise ValueError(f"--obstacle の数値変換に失敗（lane=整数, pos/time=実数）: {spec!r}") from e
 
 
 def _create_file_name(env_name: str, total_inflow: float, mlc_ratio: float, seed: str) -> str:
