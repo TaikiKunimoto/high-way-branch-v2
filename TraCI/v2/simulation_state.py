@@ -116,8 +116,8 @@ def run(
             last_recorded_second = current_sec
 
         # --- 到着/未発進/出発処理 と 観測。全車を先に観測し、スナップショット S_t の一貫性を保つ ---
-        poplist: list[int] = []
-        active: list[V2CAV] = []
+        poplist: list[int] = []  # このstepで到着し state.vehicles から削除する要素インデックス
+        active: list[V2CAV] = []  # このstep走行中で観測・調停・制御の対象となる V2CAV
         for index, veh in enumerate(state.vehicles):
             vid = veh.params.id
 
