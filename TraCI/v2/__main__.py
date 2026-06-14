@@ -1,7 +1,8 @@
 """v2 エントリポイント（EDF統一調停・自己完結パッケージ）。
 
-実行: ``cd TraCI && uv run python v2.py <seed> <inflow_pass> <inflow_exit> [--nogui]``
-既存の custom.py / default.py と同じ引数規約。結果は simulationStatistics/statistics/v2/ に出力。
+実行: ``cd TraCI && uv run python -m v2 <seed> <inflow_pass> <inflow_exit> [--nogui]``
+（v2 一式は TraCI/v2/ パッケージに集約。本ファイルは ``python -m v2`` で実行される __main__）。
+引数規約は既存の custom.py / default.py と同じ。結果は simulationStatistics/statistics/v2/ に出力。
 """
 
 import optparse
@@ -20,7 +21,7 @@ else:
 from sumolib import checkBinary
 import traci
 
-from v2_core.simulation_state import OUTPUT_DIR, V2SimulationState, run
+from v2.simulation_state import OUTPUT_DIR, V2SimulationState, run
 
 SIMULATION_TIME: float = 600.0  # シミュレーション時間[s]
 

@@ -12,10 +12,10 @@
 from dataclasses import dataclass
 
 from status.status import CarAction
-from v2_core.constants import MAINLANE_EDGE
-from v2_core.lc_request import LCRequest
-from v2_core.priority import Key
-from v2_core.snapshot import Snapshot
+from v2.constants import MAINLANE_EDGE
+from v2.lc_request import LCRequest
+from v2.priority import Key
+from v2.snapshot import Snapshot
 
 
 @dataclass(frozen=True)

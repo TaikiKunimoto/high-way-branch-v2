@@ -22,7 +22,7 @@ from utils.traci_wrapper import (
     get_veh_lane_position,
     get_veh_speed,
 )
-from v2_core.constants import (
+from v2.constants import (
     CONGESTION_SPEED,
     EXIT_ROUTE,
     MAINLANE_EDGE,
@@ -33,12 +33,12 @@ from v2_core.constants import (
     THETA_FORCE,
     TIME_STEP,
 )
-from v2_core.lc_request import LCRequest, build_requests, in_activation_window
-from v2_core.pair_executor import execute_pairs
-from v2_core.priority import Key, effective_distance, order_requests
-from v2_core.rsu import Assignment, arbitrate
-from v2_core.snapshot import Snapshot, capture
-from v2_core.v2_cav import V2CAV
+from v2.lc_request import LCRequest, build_requests, in_activation_window
+from v2.pair_executor import execute_pairs
+from v2.priority import Key, effective_distance, order_requests
+from v2.rsu import Assignment, arbitrate
+from v2.snapshot import Snapshot, capture
+from v2.v2_cav import V2CAV
 
 if "SUMO_HOME" in os.environ:
     tools = os.path.join(os.environ["SUMO_HOME"], "tools")

@@ -10,9 +10,9 @@
 from dataclasses import dataclass
 
 from status.status import CarAction
-from v2_core import geometry
-from v2_core.constants import ACTIVATION_MARGIN, MAINLANE_EDGE
-from v2_core.snapshot import Snapshot, VehObs
+from v2 import geometry
+from v2.constants import ACTIVATION_MARGIN, MAINLANE_EDGE
+from v2.snapshot import Snapshot, VehObs
 
 
 @dataclass(frozen=True)

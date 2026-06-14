@@ -26,7 +26,7 @@ from utils.traci_wrapper import (
     get_veh_speed,
     get_veh_type,
 )
-from v2_core.constants import (
+from v2.constants import (
     DEGRADED_WAIT_SPEED,
     FRICTION_COEFFICIENT,
     MAX_ACCEL,

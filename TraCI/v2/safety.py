@@ -5,9 +5,9 @@ G_req = 空走(v×δ) + 制動距離 + minGap。人間の反応時間(0.75s)は�
 """
 
 from status.status import CarAction
-from v2_core.constants import DELAY, FRICTION_COEFFICIENT, MAINLANE_EDGE, MAX_SPEED, MIN_GAP
-from v2_core.lc_request import LCRequest
-from v2_core.snapshot import Snapshot
+from v2.constants import DELAY, FRICTION_COEFFICIENT, MAINLANE_EDGE, MAX_SPEED, MIN_GAP
+from v2.lc_request import LCRequest
+from v2.snapshot import Snapshot
 
 VEH_LENGTH = 5.0  # 車長 [m]（vType length と一致）
 

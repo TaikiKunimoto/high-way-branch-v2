@@ -8,10 +8,10 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from v2_core.constants import MAINLANE_EDGE
+from v2.constants import MAINLANE_EDGE
 
 if TYPE_CHECKING:
-    from v2_core.v2_cav import V2CAV
+    from v2.v2_cav import V2CAV
 
 
 @dataclass(frozen=True)

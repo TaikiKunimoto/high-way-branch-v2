@@ -5,7 +5,7 @@
 残りLC回数 k の写像を本モジュールに閉じ込める。
 """
 
-from v2_core.constants import EXIT_ROUTE, EXIT_TARGET_LANE, MAINLANE_LENGTH
+from v2.constants import EXIT_ROUTE, EXIT_TARGET_LANE, MAINLANE_LENGTH
 
 
 def get_target_lane(route: str | None) -> int | None:
