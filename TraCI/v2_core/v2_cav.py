@@ -62,6 +62,9 @@ class V2CAVParams(BaseModel):
     safety_gap: float = MIN_GAP
     status: CarStatus = CarStatus.NORMAL
     do_not_speed_up: bool = False
+    # Layer1 調停の役割（毎Tc フル再構築）。提供車↔要求車の対応を保持する。
+    providing_to_id: str | None = None  # 自分が gap を提供している相手（要求車）
+    receiving_from_id: str | None = None  # 自分に gap を提供してくれる相手（提供車）
     # 必須LC要求の活性化（早め固定活性化）。活性化窓に初めて入った時刻を一度だけ記録する。
     activation_time: float | None = None
     activated: bool = False

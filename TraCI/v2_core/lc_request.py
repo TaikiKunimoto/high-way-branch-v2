@@ -21,6 +21,7 @@ class LCRequest:
 
     veh_id: str
     direction: CarAction  # 分流は CHANGE_LEFT（lane index 増加方向）
+    current_lane: int  # 現在レーン（次の1段LCの提供車線 = current_lane + direction step を引くのに使う）
     target_lane: int
     deadline_pos: float  # D
     remaining_k: int  # |目標レーン − 現在レーン|
@@ -53,7 +54,7 @@ def active_request(o: VehObs, sim_time: float) -> LCRequest | None:
     k = abs(target - o.lane)
     direction = CarAction.CHANGE_LEFT if target > o.lane else CarAction.CHANGE_RIGHT
     wait_time = sim_time - o.activation_time if o.activation_time is not None else 0.0
-    return LCRequest(o.veh_id, direction, target, deadline, k, o.lane_pos, wait_time)
+    return LCRequest(o.veh_id, direction, o.lane, target, deadline, k, o.lane_pos, wait_time)
 
 
 def build_requests(snap: Snapshot) -> list[LCRequest]:
