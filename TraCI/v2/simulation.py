@@ -9,6 +9,7 @@ from datetime import datetime
 import os
 import random
 import sys
+from typing import NamedTuple
 
 from pydantic import BaseModel, Field
 
@@ -44,6 +45,20 @@ import traci
 OUTPUT_DIR = "simulationStatistics/statistics/v2"
 
 
+class GroupDepartTimes(NamedTuple):
+    """グループと、その流入時刻リストのペア（seed で決まる投入スケジュール）。``for group, times in ...`` 展開可。"""
+
+    group: Group
+    times: list[float]  # 投入時刻 [s] の昇順リスト
+
+
+class CollisionEvent(NamedTuple):
+    """衝突イベント（検出時刻と巻き込まれた車両ID群）。``for time, vehicle_ids in ...`` 展開可。"""
+
+    time: float
+    vehicle_ids: list[str]
+
+
 class V2Simulation(BaseModel):
     """1回のシミュレーションの状態保持と実行（run）・流入・到着処理を担う。
 
@@ -60,14 +75,14 @@ class V2Simulation(BaseModel):
 
     veh_id: int = 0  # 次に投入する車両へ振る連番ID
     # グループ別の流入時刻（環境のグループ定義順を保持）
-    group_depart_times: list[tuple[Group, list[float]]] = Field(default_factory=list)
+    group_depart_times: list[GroupDepartTimes] = Field(default_factory=list)
     inflow_through: int = 0  # CSV 用: 必須LCなし車の流入量
     inflow_mlc: int = 0  # CSV 用: 必須LC車の流入量
     vehicles: list[V2CAV] = Field(default_factory=list)
     total_departed: list[str] = Field(default_factory=list)
     exit_vehicles: list[str] = Field(default_factory=list)
     canceled_vehicles: list[str] = Field(default_factory=list)
-    collision_history: list[tuple[float, list[str]]] = Field(default_factory=list)
+    collision_history: list[CollisionEvent] = Field(default_factory=list)
     # 各車線の待ち行列（流入レーン選択の負荷分散に使う）。レーンは環境により可変なので動的に作る
     lane_queues: dict[str, list[str]] = Field(default_factory=dict)
 
@@ -216,20 +231,20 @@ class V2Simulation(BaseModel):
         traci.close()
 
     def _set_environment(self) -> None:
-        """環境のグループ別流入量（総流入 Q × 必須LC比率 f から展開）に従い、流入時刻を乱数で決定（seed で決定的）。
-
-        グループ定義順に random.sample を呼ぶことで決定性を保つ（分流D では through→exiting＝旧 pass→exit と一致）。
-        """
+        """環境のグループ別流入量（総流入 Q × 必須LC比率 f から展開）に従い、流入時刻を乱数で決定（seed で決定的）。"""
         for group, rate in self.env.group_rates(self.total_inflow, self.mlc_ratio):
             k = int((self.simulation_time / 3600) * rate)
+
+            # ENVIRONMENTS のグループ定義の順序が変わると 同じseed でも流入時刻が変わるため注意
             seconds = sorted(random.sample(range(int(self.simulation_time)), k))
+
             # 1秒以上間隔を確保（同一stepへの偏りを避ける）
             times: list[float] = [round(n, 1) + 0.1 for n in seconds]
-            self.group_depart_times.append((group, times))
+            self.group_depart_times.append(GroupDepartTimes(group, times))
             if group.target_lane is not None:
-                self.inflow_mlc += int(rate)
+                self.inflow_mlc += int(rate)  # CSV 用: 必須LC車の流入量
             else:
-                self.inflow_through += int(rate)
+                self.inflow_through += int(rate)  # CSV 用: 必須LCなし車の流入量
             print(f"depart_times[{group.name}]:", times)
 
     def _get_depart_lane(self, edge_id: str, allowed_lanes: tuple[int, ...] | None) -> str:
@@ -282,7 +297,7 @@ class V2Simulation(BaseModel):
         for time_val, vehicles in self.collision_history:
             if abs(time_val - collision_time) < 1.0 and set(vehicles) == set(colliding_ids):
                 return
-        self.collision_history.append((collision_time, colliding_ids))
+        self.collision_history.append(CollisionEvent(collision_time, colliding_ids))
         print(f"Collision detected at {collision_time:.1f} between: {', '.join(colliding_ids)}")
 
     def _should_continue(self) -> bool:

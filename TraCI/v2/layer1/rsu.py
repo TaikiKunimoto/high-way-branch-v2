@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict
 
 from status.status import CarAction, CarStatus
-from v2.layer1.priority import Key
+from v2.layer1.priority import Key, KeyedRequest
 from v2.lc_request import LCRequest
 from v2.snapshot import Snapshot
 
@@ -35,7 +35,7 @@ class RSU:
     """Layer1（路側機）：Phase B の鍵順 提供車割当を行う（状態を持たない静的ロジック）。"""
 
     @staticmethod
-    def arbitrate(keyed: list[tuple[Key, LCRequest]], snap: Snapshot) -> list[Assignment]:
+    def arbitrate(keyed: list[KeyedRequest], snap: Snapshot) -> list[Assignment]:
         """Phase B。鍵昇順（dist小から）に提供車を占有印つきで確保し、割当のリストを返す。"""
         request_key: dict[str, Key] = {req.veh_id: key for key, req in keyed}
         claimed: set[str] = set()
@@ -100,7 +100,7 @@ class RSU:
             provider.providing_to_id = a.requester_id
 
     @staticmethod
-    def keys_unique(keyed: list[tuple[Key, LCRequest]]) -> bool:
+    def keys_unique(keyed: list[KeyedRequest]) -> bool:
         """鍵がすべて相異なるか（=同点なし）。ID が一意なので常に True のはず（デッドロックフリー）。"""
         keys = [k for k, _ in keyed]
         return len(set(keys)) == len(keys)
@@ -112,7 +112,7 @@ class RSU:
         return len(set(providers)) == len(providers)
 
     @staticmethod
-    def log_assignments(sim_time: float, keyed: list[tuple[Key, LCRequest]], assignments: list[Assignment]) -> None:
+    def log_assignments(sim_time: float, keyed: list[KeyedRequest], assignments: list[Assignment]) -> None:
         """Phase A/B の結果（EDF順とどの要求車が提供車を得たか）をログ出力する（B4 の検証用）。"""
         amap = {a.requester_id: a.provider_id for a in assignments}
         print(f"[Tc t={sim_time:.1f}] requests={len(keyed)} assigned={len(assignments)}")

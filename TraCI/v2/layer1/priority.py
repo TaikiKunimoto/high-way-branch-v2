@@ -5,11 +5,20 @@
 処理順に循環が出ない＝デッドロックフリー（コア機構_決定事項.md §3）。種別・失敗の酷さは鍵に入れない。
 """
 
+from typing import NamedTuple
+
 from v2.constants import R
 from v2.lc_request import LCRequest
 
 # 鍵: (dist, −wait_time, −lane_pos, veh_id)。タプル昇順比較で EDF 順（上位ほど緊急）になるよう各要素を符号付けする。
 Key = tuple[float, float, float, int]
+
+
+class KeyedRequest(NamedTuple):
+    """EDF の鍵と要求のペア（order_requests の結果。鍵昇順ソート済み）。``for key, request in ...`` のタプル展開も可。"""
+
+    key: Key
+    request: LCRequest
 
 
 class EDF:
@@ -28,8 +37,8 @@ class EDF:
         return (dist, -request.wait_time, -request.current_pos, int(request.veh_id))
 
     @staticmethod
-    def order_requests(requests: list[LCRequest]) -> list[tuple[Key, LCRequest]]:
+    def order_requests(requests: list[LCRequest]) -> list[KeyedRequest]:
         """Phase A: 全要求車の鍵を同一スナップショットで計算し、EDF（鍵昇順＝dist小から）にソートして返す。"""
-        keyed = [(EDF.make_key(r), r) for r in requests]
-        keyed.sort(key=lambda kr: kr[0])
+        keyed = [KeyedRequest(EDF.make_key(r), r) for r in requests]
+        keyed.sort(key=lambda kr: kr.key)
         return keyed

@@ -8,6 +8,8 @@
 現状 net が存在するのは環境①（分流D）のみ。
 """
 
+from typing import NamedTuple
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -25,6 +27,13 @@ class Group(BaseModel):
     depart_lanes: tuple[int, ...] | None = None  # 投入レーン候補（None=投入edgeの全レーン）
 
 
+class GroupRate(NamedTuple):
+    """グループと、その展開後の流入量のペア（group_rates の結果）。``for group, rate in ...`` のタプル展開も可。"""
+
+    group: Group
+    rate: float  # 流入量 [veh/h]
+
+
 class Environment(BaseModel):
     """1シナリオの固定構造。負荷（総流入 Q・必須LC比率 f）は実行時パラメータで与える。"""
 
@@ -36,7 +45,7 @@ class Environment(BaseModel):
     mainlane_length: float  # 本線長
     groups: tuple[Group, ...]
 
-    def group_rates(self, total_inflow: float, mlc_ratio: float) -> list[tuple[Group, float]]:
+    def group_rates(self, total_inflow: float, mlc_ratio: float) -> list[GroupRate]:
         """総流入 Q と必須LC比率 f を、グループ別の流入量[veh/h]に展開する（グループ定義順を保持）。
 
         必須LC車（target_lane!=None）を全体の f、through 車を (1−f) とし、同種グループ間は weight で内分する。
@@ -47,12 +56,12 @@ class Environment(BaseModel):
         f = mlc_ratio if has_mlc else 0.0
         mlc_weight = sum(g.weight for g in self.groups if g.target_lane is not None) or 1.0
         through_weight = sum(g.weight for g in self.groups if g.target_lane is None) or 1.0
-        rates: list[tuple[Group, float]] = []
+        rates: list[GroupRate] = []
         for g in self.groups:
             if g.target_lane is not None:
-                rates.append((g, total_inflow * f * (g.weight / mlc_weight)))
+                rates.append(GroupRate(g, total_inflow * f * (g.weight / mlc_weight)))
             else:
-                rates.append((g, total_inflow * (1.0 - f) * (g.weight / through_weight)))
+                rates.append(GroupRate(g, total_inflow * (1.0 - f) * (g.weight / through_weight)))
         return rates
 
 
