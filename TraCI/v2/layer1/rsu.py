@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict
 
 from status.status import CarAction, CarStatus
+from v2.layer1.priority import Key
 from v2.lc_request import LCRequest
-from v2.priority import Key
 from v2.snapshot import Snapshot
 
 if TYPE_CHECKING:
