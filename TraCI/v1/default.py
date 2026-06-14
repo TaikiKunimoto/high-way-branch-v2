@@ -7,7 +7,7 @@ import optparse
 import random
 import sys
 
-from cav.default_cav import DefaultCAV
+from v1.cav.default_cav import DefaultCAV
 from simulationStatistics.simulation_statistics import SimulationStatistics
 from sumolib import checkBinary
 from utils.traci_wrapper import (

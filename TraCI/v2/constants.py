@@ -1,20 +1,19 @@
 """v2（EDF統一調停）の定数。
 
-機構非依存の物理・ジオメトリ定数は ``cav.constants`` から re-import し single source of truth を保つ。
-機構依存の評価パラメータ（R, Θ_force, Tc, δ, 活性化マージン）はここで新規定義する
-（数値は評価で確定する暫定値。`docs/実装計画_EDF統一調停.md` §7）。
+v2 は完全自己完結とし、ベースライン（v1/cav）に依存しない。物理・ジオメトリ定数（v1 と同値）も
+ここで直接定義する。機構依存の評価パラメータ（R, Θ_force, Tc, δ, 活性化マージン）は評価で確定する暫定値
+（`docs/実装計画_EDF統一調停.md` §7）。
 """
 
-from cav.constants import (
-    FRICTION_COEFFICIENT,
-    MAINLANE_LENGTH,
-    MAX_ACCEL,
-    MAX_DECEL,
-    MAX_SPEED,
-    MIN_GAP,
-    REACTION_TIME,
-    TIME_STEP,
-)
+# --- 物理・ジオメトリ定数（v1/cav.constants と同値。v2 は自己完結のため再定義）---
+MAX_SPEED: float = 27  # [m/s] 最高速度
+MAX_ACCEL: float = 10.0  # [m/s^2] 最大加速度（過大・評価で見直し候補）
+MAX_DECEL: float = -5.0  # [m/s^2] 最大減速度（摩擦限界）
+MIN_GAP: float = 2.8  # [m] 最小車間距離
+REACTION_TIME: float = 0.75  # [s] 反応時間（追従の安全車間に使用）
+FRICTION_COEFFICIENT: float = 0.7  # 摩擦係数（制動距離計算用）
+MAINLANE_LENGTH: float = 2500  # [m] 本線長（Start-Branch 間）
+TIME_STEP: float = 0.1  # [s] シミュレーション時間ステップ
 
 __all__ = [
     "ACTIVATION_MARGIN",
