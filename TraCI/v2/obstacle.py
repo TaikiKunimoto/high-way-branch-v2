@@ -120,8 +120,10 @@ class Obstacle(BaseModel):
 
         したがって  right = lane-1（index 小・右） / left = lane+1（index 大・左）。
         """
-        right, left = self.lane - 1, self.lane + 1
-        right_ok, left_ok = right >= 0, left < num_lanes
+        right = self.lane - 1
+        left = self.lane + 1
+        right_ok = right >= 0
+        left_ok = left < num_lanes
         # 最終目的地 = 本来の目標（非回避）操作のうち最も deadline が遠い target_lane（無ければ through 車）
         goals = [op for op in veh.operations if not op.is_avoidance]
         final_target = max(goals, key=lambda op: op.deadline_pos).target_lane if goals else None

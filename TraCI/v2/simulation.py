@@ -158,7 +158,6 @@ class V2Simulation(BaseModel):
                     active, self.env.mainlane_edge, obstacle_target_id
                 )
             # 障害物より後方・同一レーンの through 車に必須LC（回避）を動的付与＝エスカレーション（コア機構 §4）
-            # TODO ここのescalateメソッドですでにMLCを持つ車両は省いているが，それは良いのか？
             if self.obstacle is not None and obstacle_placed_pos is not None:
                 self.obstacle.escalate(active, self.env.mainlane_edge, obstacle_placed_pos, obstacle_num_lanes)
 
