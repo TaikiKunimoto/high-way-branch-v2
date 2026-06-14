@@ -19,12 +19,11 @@ __all__ = [
     "ACTIVATION_MARGIN",
     # 渋滞末尾検出（tail position 計測用）
     "CONGESTION_SPEED",
-    "DEGRADED_WAIT_SPEED",
     "DELAY",
     # 分流D のジオメトリ前提
     "EXIT_ROUTE",
     "EXIT_TARGET_LANE",
-    # cav.constants から re-export する機構非依存定数
+    # 物理・ジオメトリ定数（v2 が直接定義）
     "FRICTION_COEFFICIENT",
     "MAINLANE_EDGE",
     "MAINLANE_LENGTH",
@@ -36,7 +35,6 @@ __all__ = [
     "PASS_ROUTE",
     "REACTION_TIME",
     "TC",
-    "THETA_FORCE",
     "TIME_STEP",
     # 機構依存パラメータ
     "R",
@@ -44,11 +42,9 @@ __all__ = [
 
 # --- 機構依存パラメータ（評価で確定・暫定値）---
 R: float = 50.0  # [m] 1回のLCに残す余地（多段LCの実効距離 dist=(D−pos)−(k−1)·R）
-THETA_FORCE: float = 50.0  # [m] dist≤Θ_force かつ枠なし→劣化モード（鍵には入れない物理閾値）
 TC: float = TIME_STEP  # [s] 調停周期（Tc=シミュレーション刻みで開始、後でstepから分離可能）
 DELAY: float = 0.0  # [s] 通信遅延 δ（理想0・段階4で増加。G_req の空走項 v×δ に使う）
 ACTIVATION_MARGIN: float = 400.0  # [m] 早め固定活性化: 締切Dの何m手前から要求を活性化するか
-DEGRADED_WAIT_SPEED: float = 5.0  # [m/s] 劣化モードの待機速度（枠なし＆締切間際で安全減速して待つ）
 
 # --- 渋滞末尾検出（tail position 計測用。コアの活性化では使わない＝早め固定活性化）---
 CONGESTION_SPEED: float = 11.1  # [m/s] 渋滞判定速度（約40km/h）

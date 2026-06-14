@@ -30,12 +30,11 @@ from v2.constants import (
     MIN_CONGESTED_VEHICLES,
     PASS_ROUTE,
     TC,
-    THETA_FORCE,
     TIME_STEP,
 )
 from v2.lc_request import LCRequest, build_requests, in_activation_window
 from v2.pair_executor import execute_pairs
-from v2.priority import Key, effective_distance, order_requests
+from v2.priority import Key, order_requests
 from v2.rsu import Assignment, arbitrate
 from v2.snapshot import Snapshot, capture
 from v2.v2_cav import V2CAV
@@ -85,7 +84,6 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
     tie_events = 0  # Phase A の鍵に同点が出た Tc ラウンド数（デッドロックフリーなら 0）
     double_assign_events = 0  # 同一提供車が二重割当された Tc ラウンド数（横取り禁止なら 0）
     total_lc = 0  # Layer2 で実行された瞬時LCの総数
-    max_degraded = 0  # 同時に劣化モードだった車両数の最大
     snap: Snapshot | None = None  # 直近 Tc のスナップショット（Layer2 実行で参照）
     assignments: list[Assignment] = []  # 直近 Tc の割当（Layer2 で実行）
     req_by_id: dict[str, LCRequest] = {}  # 直近 Tc の要求（id 引き）
@@ -155,9 +153,7 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
             keyed = order_requests(requests)  # Phase A: 全要求車の鍵を計算し EDF（dist昇順）にソート
             assignments = arbitrate(keyed, snap)  # Phase B: 鍵順に提供車を占有印つきで確保
             req_by_id = {r.veh_id: r for _, r in keyed}
-            degraded_ids = _degraded_requesters(keyed, assignments)  # 枠なし＆締切間際 → 劣化
-            _apply_roles(active, assignments, degraded_ids)  # 毎Tc フル再構築（役割＋劣化フラグ）
-            max_degraded = max(max_degraded, len(degraded_ids))
+            _apply_roles(active, assignments)  # 毎Tc フル再構築（提供車=YIELDING / 要求車=LANE_CHANGING）
             if not _keys_unique(keyed):
                 tie_events += 1
             if not _providers_unique(assignments):
@@ -201,7 +197,6 @@ def run(state: V2SimulationState, inflow_pass: int, inflow_exit: int, stats: Sim
     print(f"Phase A: Tc rounds with key ties (should be 0): {tie_events}")
     print(f"Phase B: Tc rounds with double-assigned providers (should be 0): {double_assign_events}")
     print(f"Layer2: total instant lane changes executed: {total_lc}")
-    print(f"Degradation: max vehicles simultaneously in Θ_force degraded mode: {max_degraded}")
     total_collisions, total_involved = _print_collision_summary(state)
     _write_tail_csv(inflow_pass, inflow_exit, seed, tail_position_list)
 
@@ -252,20 +247,13 @@ def _update_activation(veh: V2CAV) -> None:
         p.activation_time = p.sim_time
 
 
-def _degraded_requesters(keyed: list[tuple[Key, LCRequest]], assignments: list[Assignment]) -> set[str]:
-    """提供車を得られず（譲れる枠なし）かつ dist≤Θ_force（締切間際）の要求車＝劣化対象。"""
-    busy = {a.requester_id for a in assignments} | {a.provider_id for a in assignments}
-    return {req.veh_id for _, req in keyed if req.veh_id not in busy and effective_distance(req) <= THETA_FORCE}
-
-
-def _apply_roles(active: list[V2CAV], assignments: list[Assignment], degraded_ids: set[str]) -> None:
-    """毎Tc フル再構築: 全車の役割・劣化フラグを初期化してから割当結果と劣化を反映する。"""
+def _apply_roles(active: list[V2CAV], assignments: list[Assignment]) -> None:
+    """毎Tc フル再構築: 全車の役割を NORMAL にリセットしてから割当結果を反映する。"""
     by_id = {veh.params.id: veh for veh in active}
     for veh in active:
         veh.params.status = CarStatus.NORMAL
         veh.params.providing_to_id = None
         veh.params.receiving_from_id = None
-        veh.params.degraded = veh.params.id in degraded_ids
     for a in assignments:
         requester = by_id.get(a.requester_id)
         provider = by_id.get(a.provider_id)
