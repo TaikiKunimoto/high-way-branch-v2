@@ -31,12 +31,23 @@ class LCOperation(BaseModel):
     is_avoidance: bool = False  # True=突発障害物の回避（障害物 deadline_pos を通過したら完了）/ False=本来の目標
     activated: bool = False  # 活性化窓に初めて入ったら True（早め固定活性化、一度だけ）
     activation_time: float | None = None  # 活性化時刻（待ち時間の起点）
+    completed_in_time: bool = False  # 締切位置までに目標レーンへ到達したら True（締切達成率 F3、一度だけ）
 
     def is_done(self, lane: int | None, lane_pos: float | None) -> bool:
         """この操作が完了したか。回避は障害物位置を通過したら、本来の目標は target レーン到達で完了。"""
         if self.is_avoidance:
             return lane_pos is not None and lane_pos >= self.deadline_pos
         return lane == self.target_lane
+
+    def reached_target_in_time(self, lane: int | None, lane_pos: float | None) -> bool:
+        """本来の必須LC（非回避）が締切位置までに目標レーンへ到達したか（締切達成率の判定）。
+
+        回避操作は対象外（締切＝障害物位置で「到達」の意味が異なるため）。締切達成率は spawn 時の
+        本来の必須LC（目標レーンへの到達）を提案 vs LC2013 比較の中核指標とするため、本判定に限定する。
+        """
+        if self.is_avoidance or lane is None or lane_pos is None:
+            return False
+        return lane == self.target_lane and lane_pos <= self.deadline_pos
 
     def wait_time(self, sim_time: float) -> float:
         """活性化からの経過（EDF鍵の第2要素。未活性なら 0）。"""
@@ -77,7 +88,9 @@ class LCRequest(BaseModel):
 
     @classmethod
     def from_obs(cls, o: VehObs, sim_time: float, mainlane_edge: str) -> "LCRequest | None":
-        """観測値から活性な必須LC要求を構成する。窓外・目標到達済み・必須LCなしなら None。"""
+        """観測値から活性な必須LC要求を構成する。障害物・窓外・目標到達済み・必須LCなしなら None。"""
+        if o.is_obstacle:
+            return None  # 障害物（停止車両）は要求を出さない（操作は締切達成率の母数として残るが調停対象外）
         if not cls.in_activation_window(mainlane_edge, o.road, o.target_lane, o.deadline_pos, o.lane, o.lane_pos):
             return None
         # in_activation_window が True の時点で target_lane/deadline_pos/lane/lane_pos は非 None
