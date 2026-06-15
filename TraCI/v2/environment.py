@@ -123,20 +123,22 @@ WEAVE2 = Environment(
     ),
 )
 
-# --- 環境④ MD-1f 織込み（補助車線、一側）。WeaveZone 3車線: lane0=補助車線・lane1,2=本線2車線。---
-# 補助車線(lane0)は端で出口(decel)へ。合流車は lane0→lane1 へ抜け、分流車は lane1,2→lane0 へ降りる＝逆向き織込み。
+# --- 環境④ MD-1f 一側織込み（実形状）。手前に「本線2車線 / オンランプ1車線」の独立区間があり、WeaveStart で
+# オンランプが本線下側の補助車線(WeaveZone lane0)として連結。織込み区間(WeaveZone 3車線)の補助車線で、合流車
+# (OnRamp→lane0→本線lane1, 上へ)と分流車(本線→lane0→出口, 下へ)が逆向きに交差。補助車線端 WeaveEnd で
+# lane0 はオフランプ(ExitRamp)へ抜ける。net は ramps.guess 生成（config/v2/weave/build.sh）---
 WEAVE = Environment(
     name="weave",
     sumocfg="../config/v2/weave/weave.sumocfg",
-    mainlane_edge="WeaveZone",
-    mainlane_length=2000.0,
+    mainlane_edge="WeaveZone",  # 補助車線を含む3車線の織込み区間（調停対象）
+    mainlane_length=196.0,  # 補助車線(WeaveZone lane0)が出口へ抜ける位置 ＝ 締切
     groups=(
-        # 直進（必須LCなし）。本線 lane1,2
-        Group(name="through", route="r_main", weight=1.0, depart_lanes=(1, 2)),
-        # 合流（補助車線 lane0 → 本線 lane1 へ抜ける。lane0 は出口へ繋がるため抜けないと本線へ行けない）
-        Group(name="merging", route="r_main", weight=1.0, target_lane=1, deadline_pos=2000.0, depart_lanes=(0,)),
-        # 分流（本線 lane1,2 → 補助車線 lane0 へ降りて出口）。merge と逆向き＝織込み
-        Group(name="diverging", route="r_exit", weight=1.0, target_lane=0, deadline_pos=2000.0, depart_lanes=(1, 2)),
+        # 直進（必須LCなし）。本線2車線（MainApproach → WeaveZone lane1/2 → MainLane）
+        Group(name="through", route="r_main", weight=1.0, depart_edge="MainApproach"),
+        # 合流（オンランプ → 補助車線 WeaveZone lane0 → 本線 lane1 へ上がる）
+        Group(name="merging", route="r_ramp", weight=1.0, target_lane=1, deadline_pos=196.0, depart_edge="OnRamp"),
+        # 分流（本線 → 補助車線 WeaveZone lane0 へ降りる → 出口）。合流と逆向きに補助車線で交差＝織込み
+        Group(name="diverging", route="r_exit", weight=1.0, target_lane=0, deadline_pos=196.0, depart_edge="MainApproach"),
     ),
 )
 

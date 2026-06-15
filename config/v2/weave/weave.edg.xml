@@ -1,5 +1,13 @@
 <edges>
-    <edge id="WeaveZone" from="Start" to="WeaveEnd" numLanes="3" speed="27.78"/>
-    <edge id="MainEnd" from="WeaveEnd" to="End" numLanes="2" speed="27.78"/>
-    <edge id="ExitLane" from="WeaveEnd" to="Exit" numLanes="1" speed="5.56"/>
+    <!-- 独立区間: 本線2車線 -->
+    <edge id="MainApproach" from="MainStart"  to="WeaveStart" numLanes="2" speed="27.78" priority="10"/>
+    <!-- 織込み区間の本線2車線。ramps.guess がオンランプの加速車線とオフランプの減速車線を
+         1本の連続補助車線(下側lane0)として付与し、WeaveZone を3車線(lane0=補助, lane1,2=本線)にする -->
+    <edge id="WeaveZone"    from="WeaveStart" to="WeaveEnd"   numLanes="2" speed="27.78" priority="10"/>
+    <!-- 織込み後の本線2車線(tail) -->
+    <edge id="MainLane"     from="WeaveEnd"   to="End"        numLanes="2" speed="27.78" priority="10"/>
+    <!-- オンランプ1車線(低優先度。ramps.guess が on-ramp と認識し加速車線を生成) -->
+    <edge id="OnRamp"       from="OnRampStart" to="WeaveStart" numLanes="1" speed="27.78" priority="1"/>
+    <!-- オフランプ1車線(低優先度。ramps.guess が off-ramp と認識し減速車線を生成) -->
+    <edge id="ExitRamp"     from="WeaveEnd"   to="ExitEnd"    numLanes="1" speed="27.78" priority="1"/>
 </edges>
