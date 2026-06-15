@@ -107,19 +107,23 @@ STRAIGHT = Environment(
     groups=(Group(name="through", route="r_main", weight=1.0),),  # 全車 through（必須LCは障害物で動的付与）
 )
 
-# --- 環境⑤ MD-2 両側織込み（4車線 WeaveZone: lane0=加速車線(下)・lane1-3=本線、top本線 lane3→出口(上)）---
+# --- 環境⑤ MD-2 両側織込み（実織込み形状）。手前に「本線2車線 / オンランプ1車線」が独立する区間があり、
+# WeaveStart で 4車線の織込みゾーン WeaveZone（lane0=加速車線(下,オンランプ由来)・lane1,2=本線・lane3=出口車線(上)）
+# になる。合流車は加速車線 lane0→本線 lane1 へ（下から上）、分流車は本線→出口車線 lane3 へ（本線から上）必須LC。
+# 合流(下→上)と分流(本線→上)が本線を挟んで交差＝両側織込み。lane0=加速車線は WeaveEnd で drop（締切を強制）、
+# lane3=出口車線は WeaveEnd で ExitRamp(上)へ分岐。net は手動 connection 生成（config/v2/weave2/build.sh）---
 WEAVE2 = Environment(
     name="weave2",
     sumocfg="../config/v2/weave2/weave2.sumocfg",
-    mainlane_edge="WeaveZone",
-    mainlane_length=2300.0,  # 加速車線drop＝出口分岐位置＝締切
+    mainlane_edge="WeaveZone",  # 加速車線・本線・出口車線を含む4車線の織込みゾーン（調停対象）
+    mainlane_length=392.0,  # 加速車線drop＝出口分岐位置＝締切（WeaveZone 実net長）
     groups=(
-        # 直進（必須LCなし）。本線 lane1-3
-        Group(name="through", route="r_main", weight=1.0, depart_lanes=(1, 2, 3)),
-        # 合流（加速車線 lane0 → 本線 lane1 へ）
-        Group(name="merging", route="r_main", weight=1.0, target_lane=1, deadline_pos=2300.0, depart_lanes=(0,)),
-        # 分流（本線 lane1/2 → top lane3 → 出口へ）。merge と逆向きに横断＝織込み
-        Group(name="diverging", route="r_exit", weight=1.0, target_lane=3, deadline_pos=2300.0, depart_lanes=(1, 2)),
+        # 直進（必須LCなし）。本線2車線（MainApproach → WeaveZone lane1/2 → MainLane）
+        Group(name="through", route="r_main", weight=1.0, depart_edge="MainApproach"),
+        # 合流（オンランプ OnRamp → 加速車線 WeaveZone lane0 → 目標 lane1 へ必須LC、締切=加速車線端）
+        Group(name="merging", route="r_ramp", weight=1.0, target_lane=1, deadline_pos=392.0, depart_edge="OnRamp"),
+        # 分流（本線 → 出口車線 WeaveZone lane3 へ必須LC、締切=出口分岐位置）→ オフランプへ。merge と逆向き＝織込み
+        Group(name="diverging", route="r_exit", weight=1.0, target_lane=3, deadline_pos=392.0, depart_edge="MainApproach"),
     ),
 )
 

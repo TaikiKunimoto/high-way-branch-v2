@@ -1,5 +1,13 @@
 <edges>
-    <edge id="WeaveZone" from="Start" to="WeaveEnd" numLanes="4" speed="27.78"/>
-    <edge id="MainEnd" from="WeaveEnd" to="End" numLanes="3" speed="27.78"/>
-    <edge id="ExitLane" from="WeaveEnd" to="Exit" numLanes="1" speed="5.56"/>
+    <!-- 独立区間: 本線2車線（オンランプとは物理的に分離） -->
+    <edge id="MainApproach" from="MainStart" to="WeaveStart" numLanes="2" speed="27.78" priority="10"/>
+    <!-- 織込みゾーン(コア)4車線: lane0=加速車線(下,オンランプ由来)/lane1,2=本線/lane3=出口車線(上,オフランプへ)。
+         合流(下→上)と分流(本線→上)が本線を挟んで交差＝両側織込み。 -->
+    <edge id="WeaveZone" from="WeaveStart" to="WeaveEnd" numLanes="4" speed="27.78" priority="10"/>
+    <!-- 織込みゾーン以降の本線2車線（tail） -->
+    <edge id="MainLane" from="WeaveEnd" to="End" numLanes="2" speed="27.78" priority="10"/>
+    <!-- 独立区間: オンランプ1車線（下側から WeaveStart で加速車線 lane0 に連結） -->
+    <edge id="OnRamp" from="OnRampStart" to="WeaveStart" numLanes="1" speed="27.78" priority="1"/>
+    <!-- 出口ランプ1車線（WeaveEnd で出口車線 lane3 から上側へ分岐） -->
+    <edge id="ExitRamp" from="WeaveEnd" to="ExitEnd" numLanes="1" speed="27.78" priority="1"/>
 </edges>

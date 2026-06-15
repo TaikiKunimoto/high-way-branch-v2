@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on 2026-06-14T17:43:33.145707+09:00 by Eclipse SUMO netconvert 1.27.0
+<!-- generated on 2026-06-15T20:48:39.372165+09:00 by Eclipse SUMO netconvert 1.27.0
 <netconvertConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netconvertConfiguration.xsd">
 
     <input>
@@ -18,50 +18,71 @@
 
 <net version="1.20" junctionCornerDetail="5" limitTurnSpeed="5.50" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/net_file.xsd">
 
-    <location netOffset="0.00,0.00" convBoundary="0.00,0.00,2500.00,25.00" origBoundary="0.00,0.00,2500.00,25.00" projParameter="!"/>
+    <location netOffset="100.00,6.00" convBoundary="0.00,0.00,650.00,46.00" origBoundary="-100.00,-6.00,550.00,40.00" projParameter="!"/>
 
     <edge id=":WeaveEnd_0" function="internal">
-        <lane id=":WeaveEnd_0_0" index="0" speed="27.78" length="22.46" shape="2298.50,-8.00 2320.96,-8.00"/>
-        <lane id=":WeaveEnd_0_1" index="1" speed="27.78" length="22.46" shape="2298.50,-4.80 2320.96,-4.80"/>
-        <lane id=":WeaveEnd_0_2" index="2" speed="27.78" length="22.46" shape="2298.50,-1.60 2320.96,-1.60"/>
+        <lane id=":WeaveEnd_0_0" index="0" speed="27.78" length="20.75" shape="496.00,-2.00 502.14,-1.50 506.34,-0.40 510.46,0.70 516.42,1.20"/>
+        <lane id=":WeaveEnd_0_1" index="1" speed="27.78" length="20.75" shape="496.00,1.20 502.14,1.70 506.34,2.80 510.46,3.90 516.42,4.40"/>
     </edge>
-    <edge id=":WeaveEnd_3" function="internal">
-        <lane id=":WeaveEnd_3_0" index="0" speed="16.67" length="22.51" shape="2298.50,-1.60 2306.01,-1.18 2311.95,-0.20 2316.71,0.94 2320.68,1.82"/>
+    <edge id=":WeaveEnd_2" function="internal">
+        <lane id=":WeaveEnd_2_0" index="0" speed="27.78" length="20.42" shape="496.00,4.40 502.71,4.87 507.93,6.01 512.16,7.38 515.87,8.58"/>
     </edge>
-
-    <edge id="ExitLane" from="WeaveEnd" to="Exit" priority="-1">
-        <lane id="ExitLane_0" index="0" speed="5.56" length="131.37" shape="2320.68,1.82 2450.26,23.42"/>
+    <edge id=":WeaveStart_0" function="internal">
+        <lane id=":WeaveStart_0_0" index="0" speed="27.78" length="13.24" shape="95.96,4.15 98.45,2.82 99.52,-0.41 100.81,-3.70 103.96,-5.20"/>
     </edge>
-    <edge id="MainEnd" from="WeaveEnd" to="End" priority="-1">
-        <lane id="MainEnd_0" index="0" speed="27.78" length="179.04" shape="2320.96,-8.00 2500.00,-8.00"/>
-        <lane id="MainEnd_1" index="1" speed="27.78" length="179.04" shape="2320.96,-4.80 2500.00,-4.80"/>
-        <lane id="MainEnd_2" index="2" speed="27.78" length="179.04" shape="2320.96,-1.60 2500.00,-1.60"/>
-    </edge>
-    <edge id="WeaveZone" from="Start" to="WeaveEnd" priority="-1">
-        <lane id="WeaveZone_0" index="0" speed="27.78" length="2298.50" shape="0.00,-11.20 2298.50,-11.20"/>
-        <lane id="WeaveZone_1" index="1" speed="27.78" length="2298.50" shape="0.00,-8.00 2298.50,-8.00"/>
-        <lane id="WeaveZone_2" index="2" speed="27.78" length="2298.50" shape="0.00,-4.80 2298.50,-4.80"/>
-        <lane id="WeaveZone_3" index="3" speed="27.78" length="2298.50" shape="0.00,-1.60 2298.50,-1.60"/>
+    <edge id=":WeaveStart_1" function="internal">
+        <lane id=":WeaveStart_1_0" index="0" speed="27.78" length="8.80" shape="95.97,1.20 98.42,0.70 99.96,-0.40 101.50,-1.50 103.96,-2.00"/>
+        <lane id=":WeaveStart_1_1" index="1" speed="27.78" length="8.80" shape="95.96,4.40 98.42,3.90 99.96,2.80 101.49,1.70 103.96,1.20"/>
     </edge>
 
-    <junction id="End" type="dead_end" x="2500.00" y="0.00" incLanes="MainEnd_0 MainEnd_1 MainEnd_2" intLanes="" shape="2500.00,-9.60 2500.00,0.00"/>
-    <junction id="Exit" type="dead_end" x="2450.00" y="25.00" incLanes="ExitLane_0" intLanes="" shape="2450.53,21.84 2450.00,25.00"/>
-    <junction id="Start" type="dead_end" x="0.00" y="0.00" incLanes="" intLanes="" shape="0.00,0.00 0.00,-12.80"/>
-    <junction id="WeaveEnd" type="priority" x="2300.00" y="0.00" incLanes="WeaveZone_0 WeaveZone_1 WeaveZone_2 WeaveZone_3" intLanes=":WeaveEnd_0_0 :WeaveEnd_0_1 :WeaveEnd_0_2 :WeaveEnd_3_0" shape="2320.42,3.40 2320.94,0.25 2320.96,0.00 2320.96,-9.60 2316.15,-9.84 2312.62,-10.43 2306.85,-11.97 2303.32,-12.56 2298.50,-12.80 2298.50,0.00 2303.21,0.13 2306.68,0.48 2309.52,1.02 2312.34,1.71 2315.77,2.52">
-        <request index="0" response="0000" foes="0000" cont="0"/>
-        <request index="1" response="0000" foes="0000" cont="0"/>
-        <request index="2" response="0000" foes="0000" cont="0"/>
-        <request index="3" response="0000" foes="0000" cont="0"/>
+    <edge id="ExitRamp" from="WeaveEnd" to="ExitEnd" priority="1">
+        <lane id="ExitRamp_0" index="0" speed="27.78" length="139.24" shape="515.87,8.58 650.41,44.45"/>
+    </edge>
+    <edge id="MainApproach" from="MainStart" to="WeaveStart" priority="10">
+        <lane id="MainApproach_0" index="0" speed="27.78" length="95.96" shape="0.00,1.20 95.97,1.20"/>
+        <lane id="MainApproach_1" index="1" speed="27.78" length="95.96" shape="0.00,4.40 95.96,4.40"/>
+    </edge>
+    <edge id="MainLane" from="WeaveEnd" to="End" priority="10">
+        <lane id="MainLane_0" index="0" speed="27.78" length="43.58" shape="516.42,1.20 560.00,1.20"/>
+        <lane id="MainLane_1" index="1" speed="27.78" length="43.58" shape="516.42,4.40 560.00,4.40"/>
+    </edge>
+    <edge id="OnRamp" from="OnRampStart" to="WeaveStart" priority="1">
+        <lane id="OnRamp_0" index="0" speed="27.78" length="96.04" shape="0.10,-1.60 95.96,4.15"/>
+    </edge>
+    <edge id="WeaveZone" from="WeaveStart" to="WeaveEnd" priority="10">
+        <lane id="WeaveZone_0" index="0" speed="27.78" length="392.04" shape="103.96,-5.20 496.00,-5.20"/>
+        <lane id="WeaveZone_1" index="1" speed="27.78" length="392.04" shape="103.96,-2.00 496.00,-2.00"/>
+        <lane id="WeaveZone_2" index="2" speed="27.78" length="392.04" shape="103.96,1.20 496.00,1.20"/>
+        <lane id="WeaveZone_3" index="3" speed="27.78" length="392.04" shape="103.96,4.40 496.00,4.40"/>
+    </edge>
+
+    <junction id="End" type="dead_end" x="560.00" y="6.00" incLanes="MainLane_0 MainLane_1" intLanes="" shape="560.00,-0.40 560.00,6.00"/>
+    <junction id="ExitEnd" type="dead_end" x="650.00" y="46.00" incLanes="ExitRamp_0" intLanes="" shape="650.82,42.91 650.00,46.00"/>
+    <junction id="MainStart" type="dead_end" x="0.00" y="6.00" incLanes="" intLanes="" shape="0.00,6.00 0.00,-0.40"/>
+    <junction id="OnRampStart" type="dead_end" x="0.00" y="0.00" incLanes="" intLanes="" shape="-0.00,-0.00 0.19,-3.19"/>
+    <junction id="WeaveEnd" type="priority" x="500.00" y="6.00" incLanes="WeaveZone_0 WeaveZone_1 WeaveZone_2 WeaveZone_3" intLanes=":WeaveEnd_0_0 :WeaveEnd_0_1 :WeaveEnd_2_0" shape="515.46,10.12 516.28,7.03 516.42,6.00 516.42,-0.40 511.93,-0.87 508.75,-2.06 503.67,-5.14 500.48,-6.33 496.00,-6.80 496.00,6.00 500.23,6.13 503.33,6.50 505.86,7.10 508.35,7.91 511.37,8.93">
+        <request index="0" response="000" foes="000" cont="0"/>
+        <request index="1" response="000" foes="000" cont="0"/>
+        <request index="2" response="000" foes="000" cont="0"/>
+    </junction>
+    <junction id="WeaveStart" type="priority" x="100.00" y="6.00" incLanes="OnRamp_0 MainApproach_0 MainApproach_1" intLanes=":WeaveStart_0_0 :WeaveStart_1_0 :WeaveStart_1_1" shape="103.96,6.00 103.96,-6.80 101.65,-6.08 100.51,-4.29 99.95,-1.99 99.40,0.29 98.26,1.99 95.96,2.55 95.96,6.00">
+        <request index="0" response="000" foes="000" cont="0"/>
+        <request index="1" response="000" foes="000" cont="0"/>
+        <request index="2" response="000" foes="000" cont="0"/>
     </junction>
 
-    <connection from="WeaveZone" to="MainEnd" fromLane="1" toLane="0" via=":WeaveEnd_0_0" dir="s" state="M"/>
-    <connection from="WeaveZone" to="MainEnd" fromLane="2" toLane="1" via=":WeaveEnd_0_1" dir="s" state="M"/>
-    <connection from="WeaveZone" to="MainEnd" fromLane="3" toLane="2" via=":WeaveEnd_0_2" dir="s" state="M"/>
-    <connection from="WeaveZone" to="ExitLane" fromLane="3" toLane="0" via=":WeaveEnd_3_0" dir="L" state="M"/>
+    <connection from="MainApproach" to="WeaveZone" fromLane="0" toLane="1" via=":WeaveStart_1_0" dir="s" state="M"/>
+    <connection from="MainApproach" to="WeaveZone" fromLane="1" toLane="2" via=":WeaveStart_1_1" dir="s" state="M"/>
+    <connection from="OnRamp" to="WeaveZone" fromLane="0" toLane="0" via=":WeaveStart_0_0" dir="s" state="M"/>
+    <connection from="WeaveZone" to="MainLane" fromLane="1" toLane="0" via=":WeaveEnd_0_0" dir="s" state="M"/>
+    <connection from="WeaveZone" to="MainLane" fromLane="2" toLane="1" via=":WeaveEnd_0_1" dir="s" state="M"/>
+    <connection from="WeaveZone" to="ExitRamp" fromLane="3" toLane="0" via=":WeaveEnd_2_0" dir="L" state="M"/>
 
-    <connection from=":WeaveEnd_0" to="MainEnd" fromLane="0" toLane="0" dir="s" state="M"/>
-    <connection from=":WeaveEnd_0" to="MainEnd" fromLane="1" toLane="1" dir="s" state="M"/>
-    <connection from=":WeaveEnd_0" to="MainEnd" fromLane="2" toLane="2" dir="s" state="M"/>
-    <connection from=":WeaveEnd_3" to="ExitLane" fromLane="0" toLane="0" dir="L" state="M"/>
+    <connection from=":WeaveEnd_0" to="MainLane" fromLane="0" toLane="0" dir="s" state="M"/>
+    <connection from=":WeaveEnd_0" to="MainLane" fromLane="1" toLane="1" dir="s" state="M"/>
+    <connection from=":WeaveEnd_2" to="ExitRamp" fromLane="0" toLane="0" dir="L" state="M"/>
+    <connection from=":WeaveStart_0" to="WeaveZone" fromLane="0" toLane="0" dir="s" state="M"/>
+    <connection from=":WeaveStart_1" to="WeaveZone" fromLane="0" toLane="1" dir="s" state="M"/>
+    <connection from=":WeaveStart_1" to="WeaveZone" fromLane="1" toLane="2" dir="s" state="M"/>
 
 </net>
