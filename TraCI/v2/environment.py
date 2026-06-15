@@ -65,19 +65,19 @@ class Environment(BaseModel):
         return rates
 
 
-# --- 環境① S-D 単一分流（実分流形状）。手前に本線2車線が独立する区間があり、DivergeStart から本線下側に
-# 減速車線(DivergeZone lane0)が現れ、DivergeNode で出口ランプ(ExitRamp)へ分岐。本線2車線は継続。
-# 分流車は 本線→減速車線 lane0 へ必須LC（下向き）し出口へ。net は ramps.guess 生成（config/v2/diverge/build.sh）---
+# --- 環境① S-D 単一分流（実分流形状, 本線3車線）。本線3車線の下側に専用減速車線(DivergeZone lane0)が ~594m 並走し、
+# DivergeNode で出口ランプ(ExitRamp)へ分岐。本線3車線は継続。分流車は ~594m かけて 本線→減速車線 lane0 へ降りる
+# （下向き・活性は締切手前400m）。net は ramps.guess 生成（config/v2/diverge/build.sh）---
 DIVERGE = Environment(
     name="diverge",
     sumocfg="../config/v2/diverge/diverge.sumocfg",
-    mainlane_edge="DivergeZone",  # 減速車線を含む3車線の分流ゾーン（調停対象）
-    mainlane_length=94.0,  # 減速車線(DivergeZone lane0)が出口へ分岐する位置 ＝ 締切
+    mainlane_edge="DivergeZone",  # 減速車線を含む4車線の分流ゾーン（lane0=減速/下・lane1-3=本線。調停対象）
+    mainlane_length=594.0,  # 減速車線(DivergeZone lane0)が出口へ分岐する位置 ＝ 締切
     groups=(
-        # 直進（必須LCなし）。本線2車線（MainApproach → DivergeZone lane1/2 → MainLane）
+        # 直進（必須LCなし）。本線3車線（MainApproach → DivergeZone lane1/2/3 → MainLane）
         Group(name="through", route="r_pass", weight=1.0, depart_edge="MainApproach"),
         # 分流（本線 → 減速車線 DivergeZone lane0 へ必須LC、締切=分岐位置）→ 出口ランプへ
-        Group(name="exiting", route="r_exit", weight=1.0, target_lane=0, deadline_pos=94.0, depart_edge="MainApproach"),
+        Group(name="exiting", route="r_exit", weight=1.0, target_lane=0, deadline_pos=594.0, depart_edge="MainApproach"),
     ),
 )
 
