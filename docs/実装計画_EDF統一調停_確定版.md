@@ -69,7 +69,8 @@
 
 ### 1.6 Layer2 の実行時スロット確保（committed）〔仕様確定・要リファクタ〕
 
-> 相違#2 の committed/slot-free を確定。**Layer2 の責務**と位置づける。仕様は確定だが**現状の実装形態は要リファクタ**（理由は下記）。**コード修正は後続タスクとし、本確定版では未着手**。
+> 相違#2 の committed/slot-free を確定。**Layer2 の責務**と位置づける。
+> **〔#33/§6 R1 で更新〕** リファクタ R1（`committed` の明示化・幾何を `safety.py` へ集約）は**取り下げ**。#33 が挿入安全を `pair_executor._insertion_safe_live` として Layer2 へ移し `_slot_free`/`committed` と co-locate したため「`safety.py` へ集約」の動機が消えた。`committed`/`_slot_free` の責務（同step・同目標車線の二重挿入防止）自体は #33 後も有効。以下の「要リファクタの理由」は #33 前の文脈。
 
 - **責務の確定**: 同一step・同一目標車線への**位置重なり挿入の防止**は Layer2（実行層）の確定責務。Layer1 の「提供車の確保（`claimed`）」と対称に、Layer2 は「**目標スロットの確保（`committed`）**」を担う。
   - Layer1 ＝ 提供車確保（`rsu.py` `claimed`）… 調停の二重割当防止
@@ -113,6 +114,7 @@
 ### 2.2 安全ギャップ G_req と挿入判定 〔確定（一部 要修正）〕
 
 > 相違#4 の確定。
+> **〔#33 で更新〕** 挿入安全 `is_insertion_safe`（凍結スナップショットの目標車線全車走査）は #33 で**削除**され、`pair_executor._insertion_safe_live`（`getNeighbors` の実時間判定・ジャンクション跨ぎで流入車も捕捉）へ**置換・Layer2 へ移設**された。以下の `safety.py` ベースの記述は #33 前のもので、live 判定として読み替えること（R2 は本変更で吸収、F2 は新式 `_insertion_safe_live`/`_provider_yield` が対象 → §6）。
 
 - **G_req のδ化〔確定〕**: `Safety.g_req = v×δ + 制動距離 + minGap`（`safety.py:19-24`、`DELAY=0` で空走項ゼロ）。計画 T4 通り。
 - **挿入判定の必要車間基準を g_req に統一〔確定〕**: 旧v1は追従用 `safety_gap`(0.75s系) を速度差項の基準にしていたが、v2は `g_req`(δ系) を使う（`safety.py:46-55`, `pair_executor.py:74-76`）。**g_req はこの用途のために用意したものなので、これを基準にするのが正**。
@@ -200,62 +202,70 @@
 
 ## 5. 未確定パラメータ（評価で決定）※原本 §7 を保持
 
-`R`（既定 50.0）、`HOLD_MARGIN`（旧 `Θ_FORCE`。Dへの滑らかな減速・待機の距離閾値・M/B/D 別・**未実装** → §6 F5）、`δ`（`DELAY` 既定 0.0）、`G_req` 係数（`1.5×minGap`・速度差正規化 → §6 F2）、`Tc`（`TC` 既定 0.1s＝TIME_STEP）、活性化マージン（`ACTIVATION_MARGIN` 既定 400.0）。
+`R`（既定 50.0）、`HOLD_MARGIN`（旧 `Θ_FORCE`。Dへの滑らかな減速・待機の距離閾値・M/B/D 別 → §6 F5、機構は実装済みだが値は未確定）、`δ`（`DELAY` 既定 0.0）、`G_req` 係数（速度差正規化 → §6 F2）、`Tc`（`TC` 既定 0.1s＝TIME_STEP）、活性化マージン（`ACTIVATION_MARGIN` 既定 400.0）。
+
+> **〔重要・env総改修に伴う再較正〕** 距離系の margin（`ACTIVATION_MARGIN=400`・`R=50`・`HOLD_MARGIN=100`）は**旧ジオメトリ（D≈2500）前提**で、env 再設計（#31/#34/#35/#36/#37）で締切区間が大幅短縮（**diverge D=94・merge D=194** 等）したため**不釣り合い**になっている（例: `ACTIVATION_MARGIN=400`・`HOLD_MARGIN=100` がいずれも D=94 を超え、区間全体で活性化/hold が発火）。新ジオメトリ確定後に margin 群を一括再較正すること（絶対値かD比率か、シナリオ別かを含めて決定）。
 
 ---
 
-## 6. 残課題（仕様確定済み・コード未着手）
+## 6. 残課題の進捗（§6 タスク）
 
-> **現時点では実装しない**。F=要修正（計画達成のために挙動を直す必要）／R=リファクタ（挙動は妥当だが構造を改善）。
+> 当初「仕様確定済み・コード未着手」だった残課題（F=要修正／R=リファクタ）。実装の進行と、別作業 PR #31/#33/#34（merge/diverge 再設計・自力LC）による前提変更を反映して状態を随時更新する。
+
+| # | テーマ | 状態 |
+|---|---|---|
+| **F1** | 追従の安全車間δ統一 | ✅ 実装済み（PR #27 merged） |
+| **F3** | 締切達成率メトリクス | ✅ 実装済み（PR #28 merged） |
+| **F4** | 車両物理の統一（MAX_ACCEL=2.6・minGap=2.8） | 🔵 実装中（PR #32） |
+| **F5** | HOLD_MARGIN（D手前で滑らか減速・保持） | ✅ 実装（本PR） |
+| **F2** | 挿入判定の必要車間式の整理 | 🔁 #33 で対象コードが変化＝再スコープ |
+| **R1** | スロット確保(committed)の明示化 | ❌ 取り下げ（#33 で主動機消滅） |
+| **R2** | 挿入判定を最近傍2台へ簡素化 | ❌ 取り下げ（#33 が getNeighbors で吸収） |
+
+> **#33（自力LC・getNeighbors 実時間安全判定）による前提変更**: `safety.py` の `is_insertion_safe`（Tcスナップショット全車走査）を削除し、挿入安全を `pair_executor._insertion_safe_live`（getNeighbors 実時間・ジャンクション跨ぎ）へ移設。これにより §1.6/§2.2 の「挿入安全＝凍結スナップショット全車走査」記述は **live 判定**を前提に読み替える必要がある（R1/R2/F2 の前提が変わった）。
+> **golden harness**: §6 外だが、v1 エントリ移設で空振り（誤PASS）していた `tests/golden/run_golden.py` を修正済み（PR #30）。
 
 ### 要修正（F）
 
-- **F1: 追従の安全車間 `_calculate_safety_gap` をδ化に統一**〔§2.2〕
-  - 現状: `v2_cav.py:212 reaction_distance = self.speed * REACTION_TIME(0.75s)`。挿入側 `g_req` はδ化済みだが追従側は0.75s系のまま二系統に分裂。
-  - 方針: 追従側の空走項も `speed × DELAY`（δ系）へ統一し、`REACTION_TIME` 依存を除去（`constants.py:13` の扱いも整理）。計画 T4 の達成。
-  - 理由: 計画 T4「REACTION_TIME 依存を除去」が未達。δ=0（理想通信）で追従車間が過大になり、提案手法の評価が不公平になりうる。
+- **F1: 追従の安全車間δ統一** ✅ 実装済み（PR #27 merged）〔§2.2〕
+  - `_calculate_safety_gap` を `Safety.g_req`（δ系）へ委譲して二系統分裂を解消し、`REACTION_TIME` を削除。計画 T4「REACTION_TIME 依存を除去」を達成（δ=0 で追従車間が過大になる不公平を解消）。
 
-- **F3: 締切達成率（必須LC完了率）の集計を実装**〔§2.4〕
-  - 現状: `is_done`（目標到達）は EDF 調停専用で統計未接続。締切達成率の集計が無い（計画 T7 の中核指標）。
-  - 方針: 各必須LC車の「締切までに目標レーンへ到達したか」を判定し、達成率＝完了数/要求数 を CSV 出力。出口統計 `accumulate_exit_stats`（`v2_cav.py:111-115`）に到達判定を追加し、`SimulationStatistics` に達成率フィールド・列を追加する。
-  - 用途: 提案 vs LC2013 ベースラインの中核比較指標（§6 検証「feasible なら全員成功」）。テレポート方針（§2.4.1）と合わせ、失敗の主指標に据える。
+- **F3: 締切達成率（必須LC完了率）の集計** ✅ 実装済み（PR #28 merged）〔§2.4〕
+  - `LCOperation.completed_in_time` / `V2CAV.update_deadline_achievement`・`record_deadline_outcome` を追加し、`SimulationStatistics` に達成率3列（`track_deadline_achievement` フラグで v1 CSV をバイト不変に維持＝golden を壊さない）。母数＝活性化した非回避操作、分子＝締切位置までに目標レーン到達。stuck で running のまま終わった車は失敗計上（§2.4.1 と整合）。障害物化された活性化済み必須LC車も操作を残し失敗計上（`from_obs` が障害物を要求対象外に）。
+  - 用途: 提案 vs LC2013 の中核比較指標。実機での値比較は評価（別途）。
 
-- **F2: 挿入判定の必要車間式の見直し（`1.5×minGap`・`speed_diff/MAX_SPEED`・g_req の合成）**〔§2.2 / §7〕
-  - 現状: `required = 車長 + MIN_GAP*1.5 +（speed_diff>0 のとき）g_req(相手speed) × (speed_diff/MAX_SPEED)`（`safety.py:46-55`, `pair_executor.py:74-76`）。
-  - 意図したモデル: 必要車間 ＝「最低限のgap」＋「安全用 g_req（満額）」＋「速度差を考慮したgap」の3項構成。
-  - 不整合・論点:
-    1. 現状は g_req を満額足さず `speed_diff/MAX_SPEED` で減衰させ、安全項と速度差項が混在している（意図の3項に分かれていない）。
-    2. g_req は既に `minGap ＋ 制動距離(絶対速度)` を含むため、`MIN_GAP*1.5` の加算は **minGap の二重計上**。
-    3. 挿入の gap 受容で本来効くのは絶対速度でなく**相対（接近）速度**。`g_req(絶対速度)` を基準にする妥当性が要検討。
-    4. `1.5` 倍・`/MAX_SPEED` 正規化はヒューリスティックで根拠が弱い（§7 の評価対象）。
-  - 方針: 3項構成（最低gap ＋ 満額 g_req ＋ 相対速度 gap）へ整理し二重計上を排除。具体式・係数は §5 評価で確定。
+- **F2: 挿入判定の必要車間式の整理** 🔁 再スコープ（#33 で対象コードが変化）〔§2.2 / §7〕
+  - #33 で旧 `is_insertion_safe`（snapshot 全車走査）が削除され、式が2箇所に移動:
+    - `_insertion_safe_live`（getNeighbors）: `required = base(=MIN_GAP*0.5) + (g_req(相手) × Δv/MAX_SPEED if 接近 else 0)`。`dist` は minGap 込みの実ギャップ。
+    - `_provider_yield`: `required = 車長 + MIN_GAP*1.5 + (g_req(提供車) × Δv/MAX_SPEED if 接近)`（旧式のまま）。
+  - 当初 F2 の論点（g_req の満額/減衰・minGap の二重計上・絶対/相対速度・`/MAX_SPEED` 正規化・係数根拠）は**新式に引き継がれて健在**。2式で base が `MIN_GAP*0.5` と `MIN_GAP*1.5` に割れている点も要整合。
+  - 方針: `_insertion_safe_live` と `_provider_yield` の式の一貫性・minGap 計上を点検し整理。具体式・係数は §5/§7 評価で確定（sim 依存）。
 
-- **F4: 提案・ベースラインの車両物理ダイナミクスを統一**〔§8 S1 と連動〕
-  - 現状: 提案 `MAX_ACCEL=10.0`（`v2/constants.py:10`、"過大"注記）を Python 制御で実効。ベースライン `default_cav` は実ダイナミクスを SUMO vType に委ね（`MAX_ACCEL=3.0` は観測値クリップ用 `default_cav.py:113`）、`MIN_GAP=2.5` はデッドコード（`setMinGap` 未呼び出し・`safety_gap` 未使用）。`MAX_DECEL` は両者 -5.0 で一致。
-  - 方針: 車両物理（最大加速・最大減速・最小車間・車長）を提案・ベースラインで**完全統一**し、**違いを LC 決定ロジックだけにする**。過大な `MAX_ACCEL=10.0` を現実的な共通値へ下げ、提案の Python 制御とベースラインの vType を一致させる。`MIN_GAP` は 2.8 に統一（`default_cav` のデッドコード 2.5 は削除、vType minGap も 2.8）。
+- **F4: 提案・ベースラインの車両物理ダイナミクスを統一** 🔵 実装中（PR #32）〔S1 と連動〕
+  - **重要な発見（実装時）**: ベースラインも vType 任せではなかった。simple/custom も `setSpeedMode(0)` の traci 制御で、実効加速は `base_cav._calculate_safe_accel_duration`(=Δv/abs(MAX_ACCEL)) → slowDown 経由で **`v1/cav/constants.py:MAX_ACCEL` が決める**（vType accel は speedMode 0 では inert）。よって統一は **v2/constants.py と v1/cav/constants.py の両方の `MAX_ACCEL` を 2.6 に**することで成立（当初案の vType だけでは効かない）。`default_cav` は `MAX_ACCEL=3.0`（Python加速指令なし＝減速のみ）で別件保持。
+  - **minGap**: v2 は `setMinGap(2.8)`、v1 simple/custom は `v1/cav/constants.MIN_GAP=2.8`（既に2.8）。vType minGap は `high-way.rou.xml`(v1) では SUMO 挿入/floor に効く（従来2.5→2.8 に統一）。v2 5環境の vType は setMinGap で上書きされ ~inert。
+  - 実装済み: v2/constants・v1/cav/constants の MAX_ACCEL=2.6、default_cav デッドコード削除、vType（high-way＋v2各環境）の accel=2.6/minGap=2.8。
+  - 残課題: #34(diverge再設計) との `diverge.rou.xml` 衝突解決、vType の範囲確定（high-wayのみ残し v2 inert分を整理するか）、golden full(1700/1700) snapshot の扱い（**新物理で混雑が激化し再採取が非現実的に遅い → 当面 stale を削除＋要再採取注記、fast は維持**）。
   - **MAX_ACCEL の値 ＝ 2.6 m/s²〔確定・文献根拠〕**（許容 2.0〜3.0、感度分析推奨）:
     - 根拠: SUMO 公式 `vClass=passenger` 既定 `accel=2.6`（公式が「物理最大でなく convenient/快適値」と明記）。IDM 現実レンジ 0.8〜2.5（Treiber & Kesting 公式 "Realistic values are 0.8 to 2.5 m/s²"）、IDM原典 a=0.73、CAV/ACC 研究の制御上限 +2〜+3。現状 10.0 は物理限界（タイヤ摩擦 6.9〜9.8）すら超える非現実値。
     - 実装注意: 提案は traci 制御なので **`MAX_ACCEL` を Python 側で 2.6 に明示クリップ**する必要（vType の accel 設定だけでは traci 直接指令に効かない）。ベースライン(SUMO/LC2013制御)と提案(traci)で**有効上限が同一**になっているか双方で検証。
     - 併せて確認: decel は SUMO既定 4.5（快適）/ emergencyDecel 9 に対し v2 は `MAX_DECEL=-5.0`。加速だけ揃えて減速前提がずれないか。**2.0 / 2.6 / 3.0 の感度分析を一度実施**（指標悪化が「実力」か「上限低下の副作用」かを切り分け）。
     - 出典: SUMO Vehicle Type Parameter Defaults / Treiber–Hennecke–Helbing 2000 / traffic-simulation.de / MDPI Future Transportation 2026 ほか（調査ログ `tasks/w8je7ow3e`）。
 
-- **F5: 枠なし要求車の「Dへ向けた滑らかな減速・待機」挙動を実装**（旧称 Θ_force を**目的限定＋改称**）〔旧 相違#5〕
-  - **目的の限定**: 衝突は `control_speed`＋緊急減速、Dの超過防止は SUMO トポロジー（teleport 無効で lane-drop/分岐手前に stuck）が既に担保。よって本挙動の役割は**「枠が取れない要求車が分岐直前まで巡航 → SUMO トポロジーで急停止」になるのを避け、D の手前で滑らかに減速して待つ**という**挙動品質**に限定する（劣化/強制ではない）。
-  - 挙動: 今Tc 割当なし かつ 実効距離 `dist ≤ <閾値>` の要求車を、D の手前で安全に減速・保持する（提供車の協調減速とは別の、**要求車自身の committed-wait**）。後続Tc で枠が開けば通常どおり挿入。**EDF の順位（鍵）には載せない**（順序は dist が決める設計を維持）。
-  - **定数名 ＝ `HOLD_MARGIN`〔確定〕**: 旧 `Θ_FORCE`/`THETA_FORCE` は "force/劣化" の含意が実態（滑らかな減速）と合わないため改称。`ACTIVATION_MARGIN` と対の「D からの距離マージン」命名（枠が無いとき D の手前で hold する余地）。
-  - 値: シナリオ別（M/B/D）の暫定値（§5 評価対象）。
-  - 検証: 急停止が消え後続衝突・異常が出ないこと、締切達成率（F3）が改善 or 不変。
+- **F5: 枠なし要求車の「Dへ向けた滑らかな減速・待機」挙動** ⏸️ 実装済み(WIP)・**env総改修の完了まで保留**（旧称 Θ_force）〔旧 相違#5〕
+  - 機構: #33 後の `pair_executor.execute_pairs`「挿入不可かつ提供車なし」分岐に、実効距離 `dist = EDF.effective_distance(req) ≤ HOLD_MARGIN` で `_hold_before_deadline`（D で停止する減速を MAX_DECEL 上限で slowDown）を追加。EDF 鍵には載せない。`HOLD_MARGIN` を `constants.py` に追加（`ACTIVATION_MARGIN` と対の「Dからの距離マージン」、暫定100m）。branch `feat/v2-hold-margin`（未マージ）。
+  - **保留理由①（要修正・critical）**: `_hold_before_deadline` が**前方車(leader)を見ず**、`control_speed` の後に走るため `setSpeedMode(0)` 下で**緊急ブレーキを上書き**する。hold 車が列をなすと後続 hold 車が前車に追突しうる（レビューで確認）。→ 減速を leader gap で下限クランプ、または leader が近い時は hold をスキップして control_speed に委ねる修正が必須。
+  - **保留理由②（チューニング）**: env 総改修（#31/#34/#35/#36/#37）で締切区間が短縮（diverge **D=94**・merge **D=194** 等）。`HOLD_MARGIN=100 > D` だと hold がスタート地点から全区間発火する。HOLD_MARGIN はジオメトリ依存＝**env 確定後に再設定**（シナリオ別か D 比率か要決定）。27m/s から MAX_DECEL=5 で滑らか停止に約73m 要る点も短区間では余裕が乏しい。
+  - 再開時: ①leader尊重の修正 → ②env確定後に HOLD_MARGIN 較正 → 検証（急停止・追突なし／締切達成率 改善 or 不変）。
 
-- **R2: 挿入判定の走査を「最近傍 follower ＋ 最近傍 leader の2台」へ簡素化**〔§2.2〕
-  - 現状: `is_insertion_safe` が目標車線の**全車を走査**（`safety.py:38-58`）。
-  - 方針: 最近傍の後続1台＋先行1台のみの判定に戻す（v1 方式、O(n)→O(1)）。同一縦位置の重なりは leader 側 gap≈0 で従来どおり捕捉。
-  - 理由: 衝突安全は最近傍2台で決まり、同一縦位置の側面衝突も最近傍 leader（gap≈0 < required）が捕える。全車走査が追加で守る「最近傍でない高速車」ケースは車間追従（`control_speed`）下では速度が揃い起きにくく、最終的に安全層（緊急減速）が担保する。
-  - **検証条件（必須）**: 簡素化後に **衝突0／TTC（`min_TTC`・TET）が悪化しないこと**を評価で確認してから確定（安全に直結するため）。
+### リファクタ（R）— いずれも #33 で取り下げ
 
-- **R1: Layer2 のスロット確保（committed/slot-free）の明示化**〔§1.6〕
-  - 現状: `pair_executor.py:41,60-63` の `committed` dict ＋ `_slot_free` がインラインで `execute_pairs` 内に埋もれている。
-  - 方針: 幾何判定（`VEH_LENGTH + MIN_GAP` のスロット重なり）を `safety.py` へ移し、`Safety.is_insertion_safe` と同じ「挿入安全」の家族として集約。スロット確保状態は Layer1 の `claimed` と対称な明示レジストリとして Layer2 に保持。`pair_executor.py` は「割当ループ＋安全問い合わせ＋`changeLane`/`slowDown` 発行」のオーケストレーションに専念。
-  - 理由: ①責務の所在が不整合（挿入安全が2箇所に分散）／②層対称性が実装に現れていない／③単体テスト容易性（§6検証の独立検証）／④Tc≠step 拡張（§1.5）時のスロット解放意味づけ。
+- **R2: 挿入判定を最近傍2台へ簡素化** ❌ 取り下げ（#33 が吸収）〔§2.2〕
+  - #33 で旧 `is_insertion_safe`（目標車線の全車走査）が削除され、`pair_executor._insertion_safe_live` が `getNeighbors` で隣接後続/前走のみを実測＝**本質的に近傍判定**に。R2 の目的（O(n)→最近傍2台）は別手段で達成済みのため取り下げ。
+
+- **R1: Layer2 のスロット確保（committed/slot-free）の明示化** ❌ 取り下げ（#33 で主動機消滅）〔§1.6〕
+  - 当初狙い「挿入安全(`is_insertion_safe`)とスロット(`_slot_free`)が2箇所に分散→`safety.py` に集約」は、#33 が `is_insertion_safe` を削除し挿入安全(`_insertion_safe_live`)とスロット(`_slot_free`)を**両方 `pair_executor` に co-locate** したことで消滅。残るのは `committed` の明示化（テスト容易性・対称性）のみで費用対効果が低く取り下げ。
+  - 補足: 両側→中央 同スロット二重挿入の防止は #33 後も `committed`/`_slot_free` が担う（`target_lane` キーで源レーン非依存。§1.6 の「committed が凍結スナップショットの見落としを埋める」性質は #33 の live 判定下でも有効）。
 
 ---
 
