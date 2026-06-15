@@ -94,10 +94,12 @@ def tail_csv(method: str, seed: str, p: int, e: int) -> Path | None:
     return f if f.exists() else None
 
 
-def run_one(method: str, seed: str, p: int, e: int, env: dict[str, str]) -> tuple[str, float]:
+def run_one(method: str, seed: str, p: int, e: int, env: dict[str, str]) -> tuple[str, float, int]:
     start = time.time()
+    # v1 エントリポイントは TraCI/v1/ 配下のパッケージモジュール。`-m v1.<method>` で起動する
+    # （cwd=TraCI を sys.path に含め、utils/cav/simulationStatistics の絶対 import を解決する）。
     proc = subprocess.run(
-        [sys.executable, f"{method}.py", seed, str(p), str(e), "--nogui"],
+        [sys.executable, "-m", f"v1.{method}", seed, str(p), str(e), "--nogui"],
         cwd=str(TRACI_DIR),
         env=env,
         capture_output=True,
@@ -106,7 +108,7 @@ def run_one(method: str, seed: str, p: int, e: int, env: dict[str, str]) -> tupl
     dur = time.time() - start
     if proc.returncode != 0:
         sys.stderr.write(f"[{method}] EXIT {proc.returncode}\n{proc.stderr[-2000:]}\n")
-    return proc.stdout, dur
+    return proc.stdout, dur, proc.returncode
 
 
 Matrix = list[tuple[str, str, int, int]]
@@ -118,8 +120,14 @@ def artifacts_for(method: str, seed: str, p: int, e: int, stdout: str) -> tuple[
 
 def do_record(matrix: Matrix, env: dict[str, str]) -> int:
     SNAP_DIR.mkdir(parents=True, exist_ok=True)
+    failed = False
     for method, seed, p, e in matrix:
-        stdout, dur = run_one(method, seed, p, e, env)
+        stdout, dur, rc = run_one(method, seed, p, e, env)
+        if rc != 0:
+            # 異常終了した実行で good スナップショットを上書きしない（壊れた基準の混入防止）
+            print(f"  FAIL {key(method, seed, p, e)} (exit {rc}) — スナップショットを更新しません")
+            failed = True
+            continue
         out_norm, res, tail = artifacts_for(method, seed, p, e, stdout)
         d = SNAP_DIR / key(method, seed, p, e)
         if d.exists():
@@ -131,7 +139,7 @@ def do_record(matrix: Matrix, env: dict[str, str]) -> int:
                 shutil.copyfile(src, d / name)
         print(f"  recorded {key(method, seed, p, e)}  ({dur:.0f}s)")
     print(f"snapshots -> {SNAP_DIR}")
-    return 0
+    return 1 if failed else 0
 
 
 def do_check(matrix: Matrix, env: dict[str, str]) -> int:
@@ -141,7 +149,12 @@ def do_check(matrix: Matrix, env: dict[str, str]) -> int:
         if not d.exists():
             print(f"  SKIP {key(method, seed, p, e)} (no snapshot — run record first)")
             continue
-        stdout, dur = run_one(method, seed, p, e, env)
+        stdout, dur, rc = run_one(method, seed, p, e, env)
+        if rc != 0:
+            # サブプロセスが異常終了したら、古い CSV との比較で誤PASSしないよう即 FAIL とする
+            print(f"  [FAIL] {key(method, seed, p, e)} (exit {rc}) — サブプロセス異常終了（stale CSV比較を回避）")
+            failed = True
+            continue
         out_norm, res, tail = artifacts_for(method, seed, p, e, stdout)
         problems = []
         # ハード判定: CSV
