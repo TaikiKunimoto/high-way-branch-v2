@@ -75,7 +75,8 @@ if __name__ == "__main__":
         sys.exit(f"不明な --env '{options.env}'（利用可能: {', '.join(ENVIRONMENTS)}）")
 
     filename = _create_file_name(env.name, total_inflow, mlc_ratio, seed)
-    stats = SimulationStatistics(filename=filename, output_dir=OUTPUT_DIR)
+    # track_deadline_achievement=True: 提案手法は締切達成率（必須LC完了率）を中核指標としてCSV出力する
+    stats = SimulationStatistics(filename=filename, output_dir=OUTPUT_DIR, track_deadline_achievement=True)
 
     obstacle = Obstacle.from_spec(options.obstacle) if options.obstacle is not None else None
 

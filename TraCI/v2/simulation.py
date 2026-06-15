@@ -146,6 +146,7 @@ class V2Simulation(BaseModel):
                 veh.update_self_observation()  # 自車両の状態更新
                 # TODO: ここ本当に必要か，一回で良いのか？
                 veh.update_activation(self.env.mainlane_edge)  # MLC要求が活性化された際に一度だけ更新する
+                veh.update_deadline_achievement(self.env.mainlane_edge)  # 締切までに目標到達したら一度だけ記録（F3）
                 active.append(veh)
                 self._update_lane_queue(vid)
 
@@ -200,11 +201,13 @@ class V2Simulation(BaseModel):
                 "流入量(inflow)・レーン・位置・時刻の指定を確認してください。"
             )
 
-        # 終了時、残車両の統計を更新（全体平均速度のみ。route="" でグループ別バケツには入れない）
+        # 終了時、残車両（running のまま終わった車）の統計を更新。
+        # 締切達成も計上＝未完了の stuck 車が要求のみ計上され失敗として現れる（テレポート無効方針 §2.4.1）。
         for veh in self.vehicles:
             if veh.id not in running_list:
                 continue
             stats.calculate_vehicle_average_speed("", veh.speed_history)
+            veh.record_deadline_outcome(stats)
 
         collided: set[str] = set()
         for _, vehicles in self.collision_history:
@@ -215,6 +218,9 @@ class V2Simulation(BaseModel):
         print(f"Phase A: Tc rounds with key ties (should be 0): {tie_events}")
         print(f"Phase B: Tc rounds with double-assigned providers (should be 0): {double_assign_events}")
         print(f"Layer2: total instant lane changes executed: {total_lc}")
+        requested, completed, rate = stats.deadline_summary()
+        rate_str = f"{rate:.3f}" if rate is not None else "-"
+        print(f"Deadline: mandatory-LC completed/requested = {completed}/{requested} (rate {rate_str})")
         total_collisions, total_involved = self._print_collision_summary()
 
         results = {
