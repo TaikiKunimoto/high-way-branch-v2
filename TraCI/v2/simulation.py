@@ -185,7 +185,7 @@ class V2Simulation(BaseModel):
 
             # --- Layer2 実行。制御後に呼び、協調減速の slowDown と changeLane が最後の指令になるようにする ---
             if snap is not None:
-                total_lc += Layer2.execute_pairs(assignments, req_by_id, snap, {veh.id: veh for veh in active})
+                total_lc += Layer2.execute_pairs(assignments, req_by_id, {veh.id: veh for veh in active})
 
             for i in sorted(poplist, reverse=True):
                 self.vehicles.pop(i)
