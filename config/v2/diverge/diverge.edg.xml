@@ -1,10 +1,5 @@
 <edges>
-    <!-- 本線2車線。ramps.guess がこの末尾 200m に減速車線(下側lane0)を付与し、
-         MainApproach(2車線=独立approach) と MainApproach-AddedOffRampEdge(3車線=減速/分流ゾーン) に分割する。
-         ビルドスクリプトで後者を DivergeZone にリネームする。 -->
-    <edge id="MainApproach" from="MainStart" to="DivergeNode" numLanes="2" speed="27.78" priority="10"/>
-    <!-- 分岐後の本線2車線（tail） -->
-    <edge id="MainLane" from="DivergeNode" to="End" numLanes="2" speed="27.78" priority="10"/>
-    <!-- 出口ランプ1車線（低優先度。ramps.guess が off-ramp と認識し減速車線を生成する） -->
+    <edge id="MainApproach" from="MainStart" to="DivergeNode" numLanes="3" speed="27.78" priority="10"/>
+    <edge id="MainLane" from="DivergeNode" to="End" numLanes="3" speed="27.78" priority="10"/>
     <edge id="ExitRamp" from="DivergeNode" to="ExitEnd" numLanes="1" speed="27.78" priority="1"/>
 </edges>

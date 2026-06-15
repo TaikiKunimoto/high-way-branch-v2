@@ -65,19 +65,19 @@ class Environment(BaseModel):
         return rates
 
 
-# --- 環境① S-D 単一分流（実分流形状）。手前に本線2車線が独立する区間があり、DivergeStart から本線下側に
-# 減速車線(DivergeZone lane0)が現れ、DivergeNode で出口ランプ(ExitRamp)へ分岐。本線2車線は継続。
-# 分流車は 本線→減速車線 lane0 へ必須LC（下向き）し出口へ。net は ramps.guess 生成（config/v2/diverge/build.sh）---
+# --- 環境① S-D 単一分流（実分流形状, 本線3車線）。本線3車線の下側に専用減速車線(DivergeZone lane0)が ~594m 並走し、
+# DivergeNode で出口ランプ(ExitRamp)へ分岐。本線3車線は継続。分流車は ~594m かけて 本線→減速車線 lane0 へ降りる
+# （下向き・活性は締切手前400m）。net は ramps.guess 生成（config/v2/diverge/build.sh）---
 DIVERGE = Environment(
     name="diverge",
     sumocfg="../config/v2/diverge/diverge.sumocfg",
-    mainlane_edge="DivergeZone",  # 減速車線を含む3車線の分流ゾーン（調停対象）
-    mainlane_length=94.0,  # 減速車線(DivergeZone lane0)が出口へ分岐する位置 ＝ 締切
+    mainlane_edge="DivergeZone",  # 減速車線を含む4車線の分流ゾーン（lane0=減速/下・lane1-3=本線。調停対象）
+    mainlane_length=594.0,  # 減速車線(DivergeZone lane0)が出口へ分岐する位置 ＝ 締切
     groups=(
-        # 直進（必須LCなし）。本線2車線（MainApproach → DivergeZone lane1/2 → MainLane）
+        # 直進（必須LCなし）。本線3車線（MainApproach → DivergeZone lane1/2/3 → MainLane）
         Group(name="through", route="r_pass", weight=1.0, depart_edge="MainApproach"),
         # 分流（本線 → 減速車線 DivergeZone lane0 へ必須LC、締切=分岐位置）→ 出口ランプへ
-        Group(name="exiting", route="r_exit", weight=1.0, target_lane=0, deadline_pos=94.0, depart_edge="MainApproach"),
+        Group(name="exiting", route="r_exit", weight=1.0, target_lane=0, deadline_pos=594.0, depart_edge="MainApproach"),
     ),
 )
 
@@ -97,13 +97,13 @@ MERGE = Environment(
     ),
 )
 
-# --- 環境③ 素地 = 直進3車線（straight）。障害物Bは --obstacle で動的に発生させる（突発タイミング＝パラメータ）---
-# 例: env③ S-B1 = `--env straight --obstacle 1,1500,80`（Lane1・pos1500・t80 で停止車両を発生）
+# --- 環境③ 素地 = 直進3車線（straight, 1000m）。障害物Bは --obstacle で動的に発生させる（突発タイミング＝パラメータ）---
+# 例: env③ S-B1 = `--env straight --obstacle 1,600,80`（Lane1・pos600・t80 で停止車両を発生）
 STRAIGHT = Environment(
     name="straight",
     sumocfg="../config/v2/straight/straight.sumocfg",
     mainlane_edge="Road",
-    mainlane_length=2500.0,
+    mainlane_length=1000.0,
     groups=(Group(name="through", route="r_main", weight=1.0),),  # 全車 through（必須LCは障害物で動的付与）
 )
 
