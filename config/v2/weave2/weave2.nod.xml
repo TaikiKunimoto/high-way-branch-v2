@@ -1,6 +1,14 @@
 <nodes>
-    <node id="Start" x="0.0" y="0.0" type="dead_end"/>
-    <node id="WeaveEnd" x="2300.0" y="0.0" type="priority"/>
-    <node id="End" x="2500.0" y="0.0" type="dead_end"/>
-    <node id="Exit" x="2450.0" y="25.0" type="dead_end"/>
+    <!-- 本線(2車線)の始点 -->
+    <node id="MainStart" x="-200.0" y="0.0" type="dead_end"/>
+    <!-- 織込みゾーンの始点。下側からオンランプ(加速車線 lane0)が連結する -->
+    <node id="WeaveStart" x="0.0" y="0.0" type="priority"/>
+    <!-- 織込みゾーンの終点。上側へオフランプ(出口車線 lane3)が分岐する -->
+    <node id="WeaveEnd" x="400.0" y="0.0" type="priority"/>
+    <!-- 本線終点 -->
+    <node id="End" x="500.0" y="0.0" type="dead_end"/>
+    <!-- オンランプ(1車線)の始点。下側から浅い角度で進入 -->
+    <node id="OnRampStart" x="-200.0" y="-12.0" type="dead_end"/>
+    <!-- オフランプ(1車線)の終点。上側へ抜ける -->
+    <node id="ExitEnd" x="550.0" y="40.0" type="dead_end"/>
 </nodes>
