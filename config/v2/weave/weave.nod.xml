@@ -8,7 +8,7 @@
     <!-- 本線終点 -->
     <node id="End"         x="296.0"  y="0.0"   type="dead_end"/>
     <!-- オンランプ(1車線)の始点。下側から進入 -->
-    <node id="OnRampStart" x="-50.0" y="-12.0" type="dead_end"/>
+    <node id="OnRampStart" x="-100.0" y="-15.0" type="dead_end"/>
     <!-- オフランプ(1車線)の終点。下側へ抜ける（一側織込み＝合流も分流も下側の補助車線を使う） -->
     <node id="ExitEnd"     x="300.0"  y="-50.0" type="dead_end"/>
 </nodes>
