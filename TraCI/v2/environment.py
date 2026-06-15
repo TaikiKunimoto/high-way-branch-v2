@@ -77,17 +77,19 @@ DIVERGE = Environment(
     ),
 )
 
-# --- 環境② S-M 単一合流（始端の加速車線=MergeZone_0 が drop。加速車線の車は Lane1 へ必須合流）---
+# --- 環境② S-M 単一合流（実合流形状）。手前に「本線2車線 / 合流ランプ1車線」が完全独立の区間があり、
+# MergeNode で合流ランプが本線下側へ加速車線(MergeZone lane0)として連結、加速車線端 AccelEnd で drop。
+# 合流車は OnRamp→加速車線(lane0)→本線 lane1 へ必須LC（上向き）。net は ramps.guess 生成（config/v2/merge/build.sh）---
 MERGE = Environment(
     name="merge",
     sumocfg="../config/v2/merge/merge.sumocfg",
-    mainlane_edge="MergeZone",
-    mainlane_length=200.0,  # 加速車線が消える位置 ＝ 締切
+    mainlane_edge="MergeZone",  # 加速車線を含む3車線の連結区間（調停対象）
+    mainlane_length=194.0,  # 加速車線(MergeZone lane0)が drop する位置 ＝ 締切
     groups=(
-        # 直進（必須LCなし）。本線 lane 1/2/3（lane0 は加速車線）
-        Group(name="through", route="r_main", weight=1.0, depart_lanes=(1, 2, 3)),
-        # 合流（加速車線 lane0 → 目標 lane1 へ必須LC、締切=加速車線端 200m）
-        Group(name="merging", route="r_main", weight=1.0, target_lane=1, deadline_pos=200.0, depart_lanes=(0,)),
+        # 直進（必須LCなし）。本線2車線（MainApproach lane0/1 → MergeZone lane1/2）
+        Group(name="through", route="r_main", weight=1.0, depart_edge="MainApproach"),
+        # 合流（合流ランプ OnRamp → 加速車線 MergeZone lane0 → 目標 lane1 へ必須LC、締切=加速車線端）
+        Group(name="merging", route="r_ramp", weight=1.0, target_lane=1, deadline_pos=194.0, depart_edge="OnRamp"),
     ),
 )
 
