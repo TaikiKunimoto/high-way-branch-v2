@@ -6,5 +6,5 @@
     <!-- 本線終点 -->
     <node id="End" x="250.0" y="0.0" type="dead_end"/>
     <!-- 合流ランプ(1車線)の始点。下側から浅い角度で進入 -->
-    <node id="RampStart" x="-50.0" y="-12.0" type="dead_end"/>
+    <node id="RampStart" x="-100.0" y="-15.0" type="dead_end"/>
 </nodes>
