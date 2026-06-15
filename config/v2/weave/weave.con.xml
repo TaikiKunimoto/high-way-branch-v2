@@ -1,5 +1,0 @@
-<connections>
-    <connection from="WeaveZone" to="MainEnd" fromLane="1" toLane="0"/>
-    <connection from="WeaveZone" to="MainEnd" fromLane="2" toLane="1"/>
-    <connection from="WeaveZone" to="ExitLane" fromLane="0" toLane="0"/>
-</connections>
