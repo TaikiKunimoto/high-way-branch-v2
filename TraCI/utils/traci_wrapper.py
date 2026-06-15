@@ -65,6 +65,16 @@ def get_veh_leader(id: str, setting: int) -> tuple[str, float] | None:
     return cast(tuple[str, float] | None, traci.vehicle.getLeader(id, setting))
 
 
+def get_veh_neighbors(id: str, mode: int) -> list[tuple[str, float]]:
+    """指定方向の隣接車線の前走/後続車を (ID, ギャップ距離 [m]) のリストで返す（ジャンクション・edge境界を跨ぐ）。
+
+    ``mode`` はビットセット: bit1 横方向(左=0 / 右=1)、bit2 縦方向(後続=0 / 先行=1)、bit3 blocking。
+    dist は minGap 込みの実ギャップ（重なりは負）。フィーダーedge・内部ジャンクション車線から流入する車も
+    遡って返るため、自前スナップショット(mainlane_edge限定)のブラインドスポットを補える。
+    """
+    return cast(list[tuple[str, float]], list(traci.vehicle.getNeighbors(id, mode)))
+
+
 def get_veh_road_id(id: str) -> str:
     """車両の現在 edge ID（例 "MainLane1"）を返す。"""
     return cast(str, traci.vehicle.getRoadID(id))
