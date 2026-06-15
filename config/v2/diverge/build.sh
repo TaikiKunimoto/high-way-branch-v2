@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# diverge.net.xml を生成する。3本線 + 下側に専用減速車線(off-ramp lane) ~600m。
-# ramps.guess が off-ramp の減速車線(下側 lane0)を MainApproach 末尾 600m に付与し edge を分割・自動命名するので、
-# MainApproach-AddedOffRampEdge -> DivergeZone, MainApproach-AddedOffRampNode -> DivergeStart にリネーム。
+# diverge.net.xml を生成する。本線3車線・1000m(DivergeZone)で分流車を右端lane0へ寄せ(調停)、
+# DivergeStart で lane0 が ExitRamp(オフランプ車線~100m)へ分岐。手動con(単純分流, ramps.guess不要)。
 set -euo pipefail
 cd "$(dirname "$0")"
-netconvert --node-files diverge.nod.xml --edge-files diverge.edg.xml \
-  --ramps.guess --ramps.ramp-length 600 --output-file diverge.net.xml
-sed -i 's/MainApproach-AddedOffRampEdge/DivergeZone/g; s/MainApproach-AddedOffRampNode/DivergeStart/g' diverge.net.xml
+netconvert --node-files diverge.nod.xml --edge-files diverge.edg.xml --connection-files diverge.con.xml --output-file diverge.net.xml
 echo "diverge.net.xml generated."
