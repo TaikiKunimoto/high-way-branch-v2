@@ -29,12 +29,11 @@ from utils.traci_wrapper import (
     get_veh_type,
 )
 from v2.constants import (
-    FRICTION_COEFFICIENT,
     MAX_ACCEL,
     MAX_DECEL,
     MIN_GAP,
-    REACTION_TIME,
 )
+from v2.layer2.safety import Safety
 from v2.lc_request import LCOperation, LCRequest
 
 if TYPE_CHECKING:
@@ -207,11 +206,13 @@ class V2CAV(BaseModel):
 
     # --- 計算ヘルパ ---
     def _calculate_safety_gap(self) -> None:
-        """追従の安全車間 = 空走距離 + 制動距離 + minGap。"""
-        speed_kmh = self.speed * 3.6
-        reaction_distance = self.speed * REACTION_TIME
-        braking_distance = (speed_kmh**2) / (254.016 * FRICTION_COEFFICIENT)
-        self.safety_gap = reaction_distance + braking_distance + MIN_GAP
+        """追従の安全車間 ＝ 挿入と同一の安全ギャップ G_req（空走 v×δ + 制動距離 + minGap）。
+
+        旧実装は空走項に人間の反応時間 REACTION_TIME(0.75s) を使い、挿入側 ``Safety.g_req``（δ系）と
+        二系統に分裂していた。追従側も δ（通信遅延 DELAY）に統一し、安全車間の定義を1本化する
+        （δ=0 の理想通信では空走項ゼロ。計画 T4「REACTION_TIME 依存を除去」の達成）。
+        """
+        self.safety_gap = Safety.g_req(self.speed)
 
     @staticmethod
     def _safe_decel_duration(speed_diff: float) -> float:
