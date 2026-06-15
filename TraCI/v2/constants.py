@@ -10,7 +10,6 @@ MAX_SPEED: float = 27  # [m/s] 最高速度
 MAX_ACCEL: float = 10.0  # [m/s^2] 最大加速度（過大・評価で見直し候補）
 MAX_DECEL: float = -5.0  # [m/s^2] 最大減速度（摩擦限界）
 MIN_GAP: float = 2.8  # [m] 最小車間距離
-REACTION_TIME: float = 0.75  # [s] 反応時間（追従の安全車間に使用）
 FRICTION_COEFFICIENT: float = 0.7  # 摩擦係数（制動距離計算用）
 TIME_STEP: float = 0.1  # [s] シミュレーション時間ステップ
 

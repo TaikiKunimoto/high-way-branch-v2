@@ -19,12 +19,22 @@ class SimulationStatsData(BaseModel):
     total_TET: float = 0.0  # Time Exposed TTC (TET) の累積値
     min_TTC: float = float("inf")  # 記録された最小TTC
     emergency_brake_count: int = 0  # 急ブレーキ回数
+    mandatory_lc_total: int = 0  # 締切達成率の母数: 活性化した非回避必須LC操作の数（要求数）
+    mandatory_lc_completed: int = 0  # 締切達成率の分子: うち締切までに目標レーンへ到達した数（完了数）
 
 
 class SimulationStatistics:
-    def __init__(self, filename: str, output_dir: str = "simulationStatistics/statistics"):
+    def __init__(
+        self,
+        filename: str,
+        output_dir: str = "simulationStatistics/statistics",
+        track_deadline_achievement: bool = False,
+    ):
+        # track_deadline_achievement: 締切達成率（必須LC完了率）の列をCSVに出すか。提案(v2)のみ True。
+        # v1(default/simple/custom)は False のままで列を出さず、既存CSVスキーマ（golden基準）をバイト不変に保つ。
         self.data = SimulationStatsData()
         self.output_dir = output_dir
+        self.track_deadline_achievement = track_deadline_achievement
         os.makedirs(output_dir, exist_ok=True)
         self.filename = self._create_filename(filename)
         self._create_csv_with_headers()
@@ -110,6 +120,21 @@ class SimulationStatistics:
         """急ブレーキの回数をインクリメント"""
         self.data.emergency_brake_count += 1
 
+    def record_deadline_achievement(self, requested: int, completed: int) -> None:
+        """必須LC（非回避・活性化済み）の要求数と完了数を累積する（締切達成率の母数/分子）。"""
+        self.data.mandatory_lc_total += requested
+        self.data.mandatory_lc_completed += completed
+
+    def _deadline_achievement_rate(self) -> Optional[float]:
+        """締切達成率＝完了数/要求数（要求が無ければ None）。"""
+        if self.data.mandatory_lc_total == 0:
+            return None
+        return self.data.mandatory_lc_completed / self.data.mandatory_lc_total
+
+    def deadline_summary(self) -> tuple[int, int, Optional[float]]:
+        """締切達成の (要求数, 完了数, 達成率) を返す（達成率は要求が無ければ None）。表示・ログ用の公開アクセサ。"""
+        return self.data.mandatory_lc_total, self.data.mandatory_lc_completed, self._deadline_achievement_rate()
+
     def _create_filename(self, filename: str) -> str:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
         return f"{self.output_dir}/{filename}_{timestamp}.csv"
@@ -143,6 +168,9 @@ class SimulationStatistics:
             "total_vehicles_involved",
             "max_tail_position",
         ]
+        if self.track_deadline_achievement:
+            # 提案(v2)のみ。締切達成率（必須LC完了率）= mandatory_lc_completed / mandatory_lc_total
+            headers += ["mandatory_lc_total", "mandatory_lc_completed", "deadline_achievement_rate"]
         with open(self.filename, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(headers)
@@ -187,6 +215,12 @@ class SimulationStatistics:
             results.get("total_vehicles_involved"),
             results.get("max_tail_position"),
         ]
+        if self.track_deadline_achievement:
+            row += [
+                self.data.mandatory_lc_total,
+                self.data.mandatory_lc_completed,
+                self._deadline_achievement_rate(),
+            ]
         with open(self.filename, "a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(row)

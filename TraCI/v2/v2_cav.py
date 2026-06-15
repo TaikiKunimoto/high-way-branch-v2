@@ -29,12 +29,11 @@ from utils.traci_wrapper import (
     get_veh_type,
 )
 from v2.constants import (
-    FRICTION_COEFFICIENT,
     MAX_ACCEL,
     MAX_DECEL,
     MIN_GAP,
-    REACTION_TIME,
 )
+from v2.layer2.safety import Safety
 from v2.lc_request import LCOperation, LCRequest
 
 if TYPE_CHECKING:
@@ -109,10 +108,25 @@ class V2CAV(BaseModel):
         self.arrival_time = get_sim_time()
 
     def accumulate_exit_stats(self, stats: "SimulationStatistics") -> None:
-        """範囲外に出た自車の走行時間・平均速度を統計に加算する（全体のみ。route="" でグループ別バケツには入れない）。"""
+        """範囲外に出た自車の走行時間・平均速度・締切達成を統計に加算する（全体のみ。route="" でグループ別には入れない）。"""
         if self.departure_time is not None and self.arrival_time is not None:
             stats.calculate_travel_time("", self.departure_time, self.arrival_time)
         stats.calculate_vehicle_average_speed("", self.speed_history)
+        self.record_deadline_outcome(stats)
+
+    def record_deadline_outcome(self, stats: "SimulationStatistics") -> None:
+        """活性化した非回避必須LC操作について、締切達成（完了数/要求数）を統計へ記録する（F3）。
+
+        要求数＝活性化した非回避操作（spawn 時の本来の必須LC。回避操作・未活性は除く）、
+        完了数＝うち締切位置までに目標レーンへ到達したもの。stuck で running のまま終わった車は
+        完了せず要求のみ計上＝失敗として現れる（テレポート無効方針 §2.4.1 と整合）。出口時と
+        シミュレーション終了時の双方から呼ばれ、出口/残存いずれの車も一度だけ計上される。
+        """
+        requested = [op for op in self.operations if not op.is_avoidance and op.activated]
+        if not requested:
+            return
+        completed = sum(1 for op in requested if op.completed_in_time)
+        stats.record_deadline_achievement(len(requested), completed)
 
     def active_operation(self) -> LCOperation | None:
         """未完了（is_done が False）の操作のうち、最も deadline が近いものを返す（なければ None）。"""
@@ -132,10 +146,28 @@ class V2CAV(BaseModel):
                 op.activated = True
                 op.activation_time = self.sim_time
 
+    def update_deadline_achievement(self, mainlane_edge: str) -> None:
+        """締切位置までに目標レーンへ到達した非回避操作を一度だけ記録する（締切達成率 F3 の分子判定）。
+
+        本線上でのみ判定する（本線外は lane index が別 edge のもので target_lane と比較できない）。
+        v2 の車線変更は活性化済み要求への調停実行（Layer2）でしか起きないため、到達は本線上で確定する。
+        """
+        if self.road != mainlane_edge:
+            return
+        for op in self.operations:
+            if op.completed_in_time:
+                continue
+            if op.reached_target_in_time(self.lane, self.lane_pos):  # 回避操作は本メソッド内で False を返す
+                op.completed_in_time = True
+
     def make_obstacle(self) -> None:
-        """この車を障害物（突発）にする。停止し、必須LC操作を捨てて調停から外れる。"""
+        """この車を障害物（突発）にする。停止し、is_obstacle で調停（要求・提供）から外れる。
+
+        操作リストは捨てない（締切達成率 F3 の母数のため保持）。本来の必須LCが活性化済みのまま障害物化
+        された車は、停止して目標へ到達できず終了時に未完了＝失敗として計上される（テレポート無効方針 §2.4.1）。
+        要求生成側 ``LCRequest.from_obs`` が is_obstacle を除外するため、操作を残しても障害物が要求を出すことはない。
+        """
         self.is_obstacle = True
-        self.operations.clear()
         traci.vehicle.setSpeed(self.id, 0.0)
 
     # --- 状態観測 ---
@@ -207,11 +239,13 @@ class V2CAV(BaseModel):
 
     # --- 計算ヘルパ ---
     def _calculate_safety_gap(self) -> None:
-        """追従の安全車間 = 空走距離 + 制動距離 + minGap。"""
-        speed_kmh = self.speed * 3.6
-        reaction_distance = self.speed * REACTION_TIME
-        braking_distance = (speed_kmh**2) / (254.016 * FRICTION_COEFFICIENT)
-        self.safety_gap = reaction_distance + braking_distance + MIN_GAP
+        """追従の安全車間 ＝ 挿入と同一の安全ギャップ G_req（空走 v×δ + 制動距離 + minGap）。
+
+        旧実装は空走項に人間の反応時間 REACTION_TIME(0.75s) を使い、挿入側 ``Safety.g_req``（δ系）と
+        二系統に分裂していた。追従側も δ（通信遅延 DELAY）に統一し、安全車間の定義を1本化する
+        （δ=0 の理想通信では空走項ゼロ。計画 T4「REACTION_TIME 依存を除去」の達成）。
+        """
+        self.safety_gap = Safety.g_req(self.speed)
 
     @staticmethod
     def _safe_decel_duration(speed_diff: float) -> float:
