@@ -1,0 +1,10 @@
+<nodes>
+    <!-- 本線(2車線)の始点 -->
+    <node id="MainStart" x="-350.0" y="0.0" type="dead_end"/>
+    <!-- 出口ランプが本線から分岐する地点（ここで減速車線=下側lane0 が出口へ抜ける） -->
+    <node id="DivergeNode" x="0.0" y="0.0" type="priority"/>
+    <!-- 本線終点 -->
+    <node id="End" x="96.0" y="0.0" type="dead_end"/>
+    <!-- 出口ランプ(1車線)の終点。下側へ抜ける -->
+    <node id="ExitEnd" x="100.0" y="-50.0" type="dead_end"/>
+</nodes>
