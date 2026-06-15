@@ -1,4 +1,10 @@
 <edges>
-    <edge id="MergeZone" from="Start" to="AccelEnd" numLanes="4" speed="27.78"/>
-    <edge id="MainLane" from="AccelEnd" to="End" numLanes="3" speed="27.78"/>
+    <!-- 独立区間: 本線2車線（合流ランプとは物理的に分離） -->
+    <edge id="MainApproach" from="MainStart" to="MergeNode" numLanes="2" speed="27.78" priority="10"/>
+    <!-- MergeNode 以降の本線2車線。ramps.guess がここに加速車線(下側lane0)を 200m 付与し、
+         MainLane-AddedOnRampEdge(3車線=加速車線部) と MainLane(2車線=tail) に分割する。
+         ビルドスクリプトでそれぞれ MergeZone / MainLane にリネームする。 -->
+    <edge id="MainLane" from="MergeNode" to="End" numLanes="2" speed="27.78" priority="10"/>
+    <!-- 独立区間: 合流ランプ1車線（低優先度。ramps.guess が合流ランプと認識する） -->
+    <edge id="OnRamp" from="RampStart" to="MergeNode" numLanes="1" speed="27.78" priority="1"/>
 </edges>

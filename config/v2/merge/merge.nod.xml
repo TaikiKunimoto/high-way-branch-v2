@@ -1,5 +1,10 @@
 <nodes>
-    <node id="Start" x="0.0" y="0.0" type="dead_end"/>
-    <node id="AccelEnd" x="200.0" y="0.0" type="priority"/>
-    <node id="End" x="2500.0" y="0.0" type="dead_end"/>
+    <!-- 本線(2車線)の始点 -->
+    <node id="MainStart" x="-150.0" y="0.0" type="dead_end"/>
+    <!-- 合流ランプが本線に合流する地点（ここから加速車線=下側lane0 が始まる） -->
+    <node id="MergeNode" x="0.0" y="0.0" type="priority"/>
+    <!-- 本線終点 -->
+    <node id="End" x="300.0" y="0.0" type="dead_end"/>
+    <!-- 合流ランプ(1車線)の始点。下側から浅い角度で進入 -->
+    <node id="RampStart" x="-120.0" y="-18.0" type="dead_end"/>
 </nodes>
