@@ -97,13 +97,13 @@ MERGE = Environment(
     ),
 )
 
-# --- 環境③ 素地 = 直進3車線（straight）。障害物Bは --obstacle で動的に発生させる（突発タイミング＝パラメータ）---
-# 例: env③ S-B1 = `--env straight --obstacle 1,1500,80`（Lane1・pos1500・t80 で停止車両を発生）
+# --- 環境③ 素地 = 直進3車線（straight, 800m）。障害物Bは --obstacle で動的に発生させる（突発タイミング＝パラメータ）---
+# 例: env③ S-B1 = `--env straight --obstacle 1,500,80`（Lane1・pos500・t80 で停止車両を発生）
 STRAIGHT = Environment(
     name="straight",
     sumocfg="../config/v2/straight/straight.sumocfg",
     mainlane_edge="Road",
-    mainlane_length=2500.0,
+    mainlane_length=800.0,
     groups=(Group(name="through", route="r_main", weight=1.0),),  # 全車 through（必須LCは障害物で動的付与）
 )
 
