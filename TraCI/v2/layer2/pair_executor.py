@@ -81,19 +81,28 @@ class Layer2:
 
         snapshot（mainlane_edge 限定）と違い、フィーダーedge・内部ジャンクション車線から流入してくる車も
         getNeighbors がジャンクションを跨いで返すため、入口で流入車を見落とすブラインドスポット衝突を防ぐ。
-        dist は minGap 込みの実ギャップ。接近側（後続が速い／自分が先行より速い）は g_req 相当の余裕を上乗せして要求する。
+        dist は minGap 込みの実ギャップ（重なりは負）。
+
+        必要ギャップは **相対制動モデル**で求める（旧実装の ``base=MIN_GAP*0.5`` 固定＋``g_req×(Δv/MAX_SPEED)`` 割引は
+        物理的に過小で、混雑＝低速度差ほど必要量が ~1.4m に潰れ危険な隙間挿入を許していた）。両車が最大減速 |MAX_DECEL|
+        で止まると仮定し、追突しない最小車間を要求する::
+
+            required = minGap + max(0, (v_back² − v_front²) / (2·|MAX_DECEL|))
+
+        - 後続側: v_back=後続速度, v_front=ego 速度（ego が最大減速しても後続が止まれる車間）。
+        - 先行側: v_back=ego 速度, v_front=先行速度（ego が先行へ追突しない車間）。
+        これを満たさない隙間は False を返し、提供車が gap を開け切るまで待つ（本来の協調挙動へ回す）。
         """
+        a = abs(MAX_DECEL)
         lat = 1 if going_right else 0  # bit1: 左=0 / 右=1
-        base = MIN_GAP * 0.5
-        for nid, dist in get_veh_neighbors(veh_id, lat):  # 後続（bit2=0）。後続が速いほど大きな車間が要る
+        for nid, dist in get_veh_neighbors(veh_id, lat):  # 後続（bit2=0）: ego が止まっても後続が止まれる車間
             f_speed = get_veh_speed(nid)
-            speed_diff = f_speed - ego_speed
-            required = base + (Safety.g_req(f_speed) * (speed_diff / MAX_SPEED) if speed_diff > 0 else 0.0)
+            required = MIN_GAP + max(0.0, (f_speed**2 - ego_speed**2) / (2 * a))
             if dist < required:
                 return False
-        for nid, dist in get_veh_neighbors(veh_id, lat | 2):  # 先行（bit2=1）。自分が速いほど大きな車間が要る
-            speed_diff = ego_speed - get_veh_speed(nid)
-            required = base + (Safety.g_req(ego_speed) * (speed_diff / MAX_SPEED) if speed_diff > 0 else 0.0)
+        for nid, dist in get_veh_neighbors(veh_id, lat | 2):  # 先行（bit2=1）: ego が先行へ追突しない車間
+            l_speed = get_veh_speed(nid)
+            required = MIN_GAP + max(0.0, (ego_speed**2 - l_speed**2) / (2 * a))
             if dist < required:
                 return False
         return True
