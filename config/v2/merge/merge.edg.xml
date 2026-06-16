@@ -5,6 +5,11 @@
          MainLane-AddedOnRampEdge(3車線=加速車線部) と MainLane(2車線=tail) に分割する。
          ビルドスクリプトでそれぞれ MergeZone / MainLane にリネームする。 -->
     <edge id="MainLane" from="MergeNode" to="End" numLanes="2" speed="27.78" priority="10"/>
-    <!-- 独立区間: 合流ランプ1車線（低優先度。ramps.guess が合流ランプと認識する） -->
-    <edge id="OnRamp" from="RampStart" to="MergeNode" numLanes="1" speed="27.78" priority="1"/>
+    <!-- 独立区間: 合流ランプ1車線（低優先度。ramps.guess が合流ランプと認識する）。直線でなく shape で湾曲。
+         RampStart 側 50m(x:-100→-50) を ease-in 三次カーブにし本線とほぼ平行から滑らかに立ち上げ、
+         合流側 50m(x:-50→0) は直線(傾き0.15)のまま残す。理由: ramps.guess は合流直前が直線だと
+         ramp lane を加速車線(下側lane0)へ自動で寝かせて綺麗に着地させるが、合流直前に shape 点を置くと
+         自動寄せが効かず接続が折れて速度低下警告が出るため。端点(RampStart/MergeNode)は不変。 -->
+    <edge id="OnRamp" from="RampStart" to="MergeNode" numLanes="1" speed="27.78" priority="1"
+          shape="-100.00,-15.00 -90.00,-14.46 -80.00,-13.08 -70.00,-11.22 -60.00,-9.24 -50.00,-7.50 0.00,0.00"/>
 </edges>
