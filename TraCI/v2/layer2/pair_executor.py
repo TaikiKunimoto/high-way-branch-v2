@@ -61,8 +61,12 @@ class Layer2:
                 provider = by_id.get(provider_id) if provider_id is not None else None
                 if provider is not None:
                     Layer2._provider_yield(provider, requester)
-                elif EDF.effective_distance(req) <= HOLD_MARGIN:
-                    Layer2._hold_before_deadline(requester, req)  # 提供車なし＆締切間近: D手前で自力減速・保持（F5）
+                if EDF.effective_distance(req) <= HOLD_MARGIN:
+                    # 締切間近でなお挿入不可: D手前で滑らかに停止し行き止まり(lane-drop)の急停止を防ぐ（F5・最終手段）
+                    Layer2._hold_before_deadline(requester, req)
+                else:
+                    # それ以前: 目標レーン先行の流速に自分を合わせ、速度差を縮めて挿入成功率を上げる（自己減速）
+                    Layer2._requester_match_target_speed(requester, target_lane < req.current_lane)
         return lc_count
 
     @staticmethod
@@ -139,3 +143,26 @@ class Layer2:
         needed_decel = (requester.speed**2) / (2 * remaining)  # D で停止するのに要する減速
         decel = min(needed_decel, abs(MAX_DECEL))  # 物理上限内で滑らかに（超過時は最大減速で best-effort）
         traci.vehicle.slowDown(requester.id, 0.0, requester.speed / decel)
+
+    @staticmethod
+    def _requester_match_target_speed(requester: V2CAV, going_right: bool) -> None:
+        """要求車自身が目標レーンの先行車の速度まで減速し、速度差を縮めて挿入可能にする（合流のための自己減速）。
+
+        最高速のまま低速の隣レーンへ突っ込めず一切減速しない問題への対処。目標レーン先行速度に合わせると
+        ``_insertion_safe_live`` の必要ギャップ（速度差比例）が縮み、既存の物理ギャップへ滑り込める。提供車の後方
+        ギャップ開けと相補的（提供車=後方／自己減速=自分が前方へ行き過ぎないよう速度を落とす）。own leader が
+        安全車間内なら control_speed の追従・緊急減速に委ねてスキップする（緊急ブレーキ上書き防止）。
+        """
+        if requester.speed <= 0:
+            return
+        if requester.leader_distance is not None and requester.leader_distance < requester.safety_gap:
+            return
+        lat = (1 if going_right else 0) | 2  # 目標レーンの先行（bit2=1）
+        front = get_veh_neighbors(requester.id, lat)
+        if not front:
+            return  # 前方車なし＝速度差ではなく別要因。自己減速しない
+        lead_speed = min(get_veh_speed(nid) for nid, _ in front)
+        if requester.speed <= lead_speed:
+            return  # 既に同等以下なら減速不要
+        duration = (requester.speed - lead_speed) / abs(MAX_DECEL)
+        traci.vehicle.slowDown(requester.id, max(lead_speed, 0.0), duration)
