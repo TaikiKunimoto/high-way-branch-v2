@@ -9,7 +9,7 @@
 import os
 import sys
 
-from utils.traci_wrapper import get_veh_neighbors, get_veh_speed
+from utils.traci_wrapper import get_veh_neighbors, get_veh_speed, slow_down
 from v2.constants import HOLD_MARGIN, MAX_DECEL, MAX_SPEED, MIN_GAP
 from v2.layer1.priority import EDF
 from v2.layer1.rsu import Assignment
@@ -122,7 +122,7 @@ class Layer2:
         target_speed = Layer2._supporting_speed(r.speed, current_gap, required)
         if p.speed > target_speed:
             duration = (p.speed - target_speed) / abs(MAX_DECEL)
-            traci.vehicle.slowDown(p.id, max(target_speed, 0.0), duration)
+            slow_down(p.id, max(target_speed, 0.0), duration)
 
     @staticmethod
     def _supporting_speed(requesting_speed: float, current_gap: float, required: float) -> float:
@@ -151,7 +151,7 @@ class Layer2:
             return  # 既に D を越えていれば SUMO トポロジーに任せる
         needed_decel = (requester.speed**2) / (2 * remaining)  # D で停止するのに要する減速
         decel = min(needed_decel, abs(MAX_DECEL))  # 物理上限内で滑らかに（超過時は最大減速で best-effort）
-        traci.vehicle.slowDown(requester.id, 0.0, requester.speed / decel)
+        slow_down(requester.id, 0.0, requester.speed / decel)
 
     @staticmethod
     def _requester_match_target_speed(requester: V2CAV, going_right: bool) -> None:
@@ -174,4 +174,4 @@ class Layer2:
         if requester.speed <= lead_speed:
             return  # 既に同等以下なら減速不要
         duration = (requester.speed - lead_speed) / abs(MAX_DECEL)
-        traci.vehicle.slowDown(requester.id, max(lead_speed, 0.0), duration)
+        slow_down(requester.id, max(lead_speed, 0.0), duration)

@@ -27,6 +27,7 @@ from utils.traci_wrapper import (
     get_veh_route_id,
     get_veh_speed,
     get_veh_type,
+    slow_down,
 )
 from v2.constants import (
     MAX_ACCEL,
@@ -217,20 +218,20 @@ class V2CAV(BaseModel):
             if speed_diff <= 0 or min_duration < ttc:
                 self._control_speed_by_speed_limit(speed_limit)
             else:
-                traci.vehicle.slowDown(self.id, self.leader_speed, min(ttc, min_duration))
+                slow_down(self.id, self.leader_speed, min(ttc, min_duration))
         else:
             if self.do_not_speed_up:
                 return
             if speed_diff >= 0:
                 target_speed = self.leader_speed - 1 if self.leader_speed > 1 else 0.0
-                traci.vehicle.slowDown(self.id, target_speed, min(ttc, min_duration))
+                slow_down(self.id, target_speed, min(ttc, min_duration))
 
     def _control_speed_by_speed_limit(self, speed_limit: float) -> None:
         """制限速度に合わせて加減速する。"""
         if self.speed > speed_limit:
-            traci.vehicle.slowDown(self.id, speed_limit, self._safe_decel_duration(self.speed - speed_limit))
+            slow_down(self.id, speed_limit, self._safe_decel_duration(self.speed - speed_limit))
         elif not self.do_not_speed_up:
-            traci.vehicle.slowDown(self.id, speed_limit, self._safe_accel_duration(speed_limit - self.speed))
+            slow_down(self.id, speed_limit, self._safe_accel_duration(speed_limit - self.speed))
 
     def _emergency_brake(self, target_speed: float) -> None:
         """衝突回避の緊急減速。"""
