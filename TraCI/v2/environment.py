@@ -107,23 +107,27 @@ STRAIGHT = Environment(
     groups=(Group(name="through", route="r_main", weight=1.0),),  # 全車 through（必須LCは障害物で動的付与）
 )
 
-# --- 環境⑤ MD-2 両側織込み（実織込み形状）。手前に「本線2車線 / オンランプ1車線」が独立する区間があり、
-# WeaveStart で 4車線の織込みゾーン WeaveZone（lane0=加速車線(下,オンランプ由来)・lane1,2=本線・lane3=出口車線(上)）
-# になる。合流車は加速車線 lane0→本線 lane1 へ（下から上）、分流車は本線→出口車線 lane3 へ（本線から上）必須LC。
-# 合流(下→上)と分流(本線→上)が本線を挟んで交差＝両側織込み。lane0=加速車線は WeaveEnd で drop（締切を強制）、
-# lane3=出口車線は WeaveEnd で ExitRamp(上)へ分岐。net は手動 connection 生成（config/v2/weave2/build.sh）---
+# --- 環境⑤ MD-2 両側織込み（上下左右対称, 4車線コア 1:2:1）。WeaveStart で上下2本のオンランプが合流し
+# （OnRampBottom→加速車線 lane0(下) / OnRampTop→加速車線 lane3(上)）、WeaveEnd で上下2本のオフランプへ分流する
+# （lane0(下)→OffRampBottom / lane3(上)→OffRampTop）。本線2車線は中央 lane1,2。合流車は外側 lane0/lane3 から
+# 本線 lane1/lane2 へ、分流車は本線から外側 lane0/lane3 へ必須LC＝上下左右対称の両側織込み。MLC4種は weight 均等。
+# net は手動 connection 生成（config/v2/weave2/build.sh）---
 WEAVE2 = Environment(
     name="weave2",
     sumocfg="../config/v2/weave2/weave2.sumocfg",
-    mainlane_edge="WeaveZone",  # 加速車線・本線・出口車線を含む4車線の織込みゾーン（調停対象）
+    mainlane_edge="WeaveZone",  # 加速/出口車線を含む4車線の織込みゾーン（調停対象, 1:2:1）
     mainlane_length=392.0,  # 加速車線drop＝出口分岐位置＝締切（WeaveZone 実net長）
     groups=(
         # 直進（必須LCなし）。本線2車線（MainApproach → WeaveZone lane1/2 → MainLane）
         Group(name="through", route="r_main", weight=1.0, depart_edge="MainApproach"),
-        # 合流（オンランプ OnRamp → 加速車線 WeaveZone lane0 → 目標 lane1 へ必須LC、締切=加速車線端）
-        Group(name="merging", route="r_ramp", weight=1.0, target_lane=1, deadline_pos=392.0, depart_edge="OnRamp"),
-        # 分流（本線 → 出口車線 WeaveZone lane3 へ必須LC、締切=出口分岐位置）→ オフランプへ。merge と逆向き＝織込み
-        Group(name="diverging", route="r_exit", weight=1.0, target_lane=3, deadline_pos=392.0, depart_edge="MainApproach"),
+        # 合流(下): OnRampBottom → 加速車線 lane0 → 目標 lane1 へ必須LC（下から上）
+        Group(name="merging_bottom", route="r_ramp_b", weight=1.0, target_lane=1, deadline_pos=392.0, depart_edge="OnRampBottom"),
+        # 合流(上): OnRampTop → 加速車線 lane3 → 目標 lane2 へ必須LC（上から下, 合流下と上下対称）
+        Group(name="merging_top", route="r_ramp_t", weight=1.0, target_lane=2, deadline_pos=392.0, depart_edge="OnRampTop"),
+        # 分流(下): 本線 → 出口車線 lane0 へ必須LC → OffRampBottom（合流と逆向き＝織込み）
+        Group(name="diverging_bottom", route="r_exit_b", weight=1.0, target_lane=0, deadline_pos=392.0, depart_edge="MainApproach"),
+        # 分流(上): 本線 → 出口車線 lane3 へ必須LC → OffRampTop（分流下と上下対称）
+        Group(name="diverging_top", route="r_exit_t", weight=1.0, target_lane=3, deadline_pos=392.0, depart_edge="MainApproach"),
     ),
 )
 
