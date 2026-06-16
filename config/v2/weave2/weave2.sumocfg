@@ -3,6 +3,7 @@
     <input>
         <net-file value="weave2.net.xml"/>
         <route-files value="weave2.rou.xml"/>
+        <gui-settings-file value="weave2.view.xml"/>
     </input>
     <time>
         <step-length value="0.1"/>

@@ -128,6 +128,10 @@ WEAVE2 = Environment(
         Group(name="diverging_bottom", route="r_exit_b", weight=1.0, target_lane=0, deadline_pos=392.0, depart_edge="MainApproach"),
         # 分流(上): 本線 → 出口車線 lane3 へ必須LC → OffRampTop（分流下と上下対称）
         Group(name="diverging_top", route="r_exit_t", weight=1.0, target_lane=3, deadline_pos=392.0, depart_edge="MainApproach"),
+        # 対角(下→上): OnRampBottom(lane0) → 対角 lane3 へ3車線必須LC → OffRampTop（織込みの交差移動。weight=2で強調）
+        Group(name="crossing_bt", route="r_cross_bt", weight=2.0, target_lane=3, deadline_pos=392.0, depart_edge="OnRampBottom"),
+        # 対角(上→下): OnRampTop(lane3) → 対角 lane0 へ3車線必須LC → OffRampBottom（対角下→上と上下対称, weight=2）
+        Group(name="crossing_tb", route="r_cross_tb", weight=2.0, target_lane=0, deadline_pos=392.0, depart_edge="OnRampTop"),
     ),
 )
 
