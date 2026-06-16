@@ -1,6 +1,6 @@
 <nodes>
     <node id="MainStart"    x="-1000.0" y="0.0"   type="dead_end"/>
     <node id="DivergeStart" x="0.0"     y="0.0"   type="priority"/>
-    <node id="End"          x="50.0"    y="0.0"   type="dead_end"/>
-    <node id="ExitEnd"      x="115.0"   y="-55.0" type="dead_end"/>
+    <node id="End"          x="112.0"   y="0.0"   type="dead_end"/>
+    <node id="ExitEnd"      x="58.0"    y="-11.4" type="dead_end"/>
 </nodes>
