@@ -1,0 +1,6 @@
+<connections>
+    <connection from="DivergeZone" to="MainLane" fromLane="0" toLane="0"/>
+    <connection from="DivergeZone" to="ExitRamp" fromLane="0" toLane="0"/>
+    <connection from="DivergeZone" to="MainLane" fromLane="1" toLane="1"/>
+    <connection from="DivergeZone" to="MainLane" fromLane="2" toLane="2"/>
+</connections>
