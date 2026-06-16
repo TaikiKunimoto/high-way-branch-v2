@@ -9,7 +9,7 @@
 import os
 import sys
 
-from utils.traci_wrapper import get_veh_neighbors, get_veh_speed
+from utils.traci_wrapper import get_veh_neighbors, get_veh_speed, slow_down
 from v2.constants import HOLD_MARGIN, MAX_DECEL, MAX_SPEED, MIN_GAP
 from v2.layer1.priority import EDF
 from v2.layer1.rsu import Assignment
@@ -81,19 +81,28 @@ class Layer2:
 
         snapshot（mainlane_edge 限定）と違い、フィーダーedge・内部ジャンクション車線から流入してくる車も
         getNeighbors がジャンクションを跨いで返すため、入口で流入車を見落とすブラインドスポット衝突を防ぐ。
-        dist は minGap 込みの実ギャップ。接近側（後続が速い／自分が先行より速い）は g_req 相当の余裕を上乗せして要求する。
+        dist は minGap 込みの実ギャップ（重なりは負）。
+
+        必要ギャップは **相対制動モデル**で求める（旧実装の ``base=MIN_GAP*0.5`` 固定＋``g_req×(Δv/MAX_SPEED)`` 割引は
+        物理的に過小で、混雑＝低速度差ほど必要量が ~1.4m に潰れ危険な隙間挿入を許していた）。両車が最大減速 |MAX_DECEL|
+        で止まると仮定し、追突しない最小車間を要求する::
+
+            required = minGap + max(0, (v_back² − v_front²) / (2·|MAX_DECEL|))
+
+        - 後続側: v_back=後続速度, v_front=ego 速度（ego が最大減速しても後続が止まれる車間）。
+        - 先行側: v_back=ego 速度, v_front=先行速度（ego が先行へ追突しない車間）。
+        これを満たさない隙間は False を返し、提供車が gap を開け切るまで待つ（本来の協調挙動へ回す）。
         """
+        a = abs(MAX_DECEL)
         lat = 1 if going_right else 0  # bit1: 左=0 / 右=1
-        base = MIN_GAP * 0.5
-        for nid, dist in get_veh_neighbors(veh_id, lat):  # 後続（bit2=0）。後続が速いほど大きな車間が要る
+        for nid, dist in get_veh_neighbors(veh_id, lat):  # 後続（bit2=0）: ego が止まっても後続が止まれる車間
             f_speed = get_veh_speed(nid)
-            speed_diff = f_speed - ego_speed
-            required = base + (Safety.g_req(f_speed) * (speed_diff / MAX_SPEED) if speed_diff > 0 else 0.0)
+            required = MIN_GAP + max(0.0, (f_speed**2 - ego_speed**2) / (2 * a))
             if dist < required:
                 return False
-        for nid, dist in get_veh_neighbors(veh_id, lat | 2):  # 先行（bit2=1）。自分が速いほど大きな車間が要る
-            speed_diff = ego_speed - get_veh_speed(nid)
-            required = base + (Safety.g_req(ego_speed) * (speed_diff / MAX_SPEED) if speed_diff > 0 else 0.0)
+        for nid, dist in get_veh_neighbors(veh_id, lat | 2):  # 先行（bit2=1）: ego が先行へ追突しない車間
+            l_speed = get_veh_speed(nid)
+            required = MIN_GAP + max(0.0, (ego_speed**2 - l_speed**2) / (2 * a))
             if dist < required:
                 return False
         return True
@@ -113,7 +122,7 @@ class Layer2:
         target_speed = Layer2._supporting_speed(r.speed, current_gap, required)
         if p.speed > target_speed:
             duration = (p.speed - target_speed) / abs(MAX_DECEL)
-            traci.vehicle.slowDown(p.id, max(target_speed, 0.0), duration)
+            slow_down(p.id, max(target_speed, 0.0), duration)
 
     @staticmethod
     def _supporting_speed(requesting_speed: float, current_gap: float, required: float) -> float:
@@ -142,7 +151,7 @@ class Layer2:
             return  # 既に D を越えていれば SUMO トポロジーに任せる
         needed_decel = (requester.speed**2) / (2 * remaining)  # D で停止するのに要する減速
         decel = min(needed_decel, abs(MAX_DECEL))  # 物理上限内で滑らかに（超過時は最大減速で best-effort）
-        traci.vehicle.slowDown(requester.id, 0.0, requester.speed / decel)
+        slow_down(requester.id, 0.0, requester.speed / decel)
 
     @staticmethod
     def _requester_match_target_speed(requester: V2CAV, going_right: bool) -> None:
@@ -165,4 +174,4 @@ class Layer2:
         if requester.speed <= lead_speed:
             return  # 既に同等以下なら減速不要
         duration = (requester.speed - lead_speed) / abs(MAX_DECEL)
-        traci.vehicle.slowDown(requester.id, max(lead_speed, 0.0), duration)
+        slow_down(requester.id, max(lead_speed, 0.0), duration)

@@ -4,9 +4,13 @@
 位置・距離は [m]、速度は [m/s]、時刻は [s]。
 """
 
+import math
 from typing import cast
 
 import traci
+
+# slowDown の最小継続時間 [s]（1 step 相当）。異常な duration のフォールバック。
+_MIN_SLOWDOWN_DURATION = 0.1
 
 
 # Vehicle系の関数
@@ -73,6 +77,18 @@ def get_veh_neighbors(id: str, mode: int) -> list[tuple[str, float]]:
     遡って返るため、自前スナップショット(mainlane_edge限定)のブラインドスポットを補える。
     """
     return cast(list[tuple[str, float]], list(traci.vehicle.getNeighbors(id, mode)))
+
+
+def slow_down(id: str, speed: float, duration: float) -> None:
+    """``traci.vehicle.slowDown`` の安全ラッパ。速度を非負・有限、継続時間を正・有限にクランプする。
+
+    衝突/テレポート直後の異常状態で duration が ≤0・NaN・inf になると、SUMO が
+    command 0xc4 'Invalid time interval' を返し TraCI 接続が落ちて run ごと中断する。
+    正常な正の duration はそのまま通すため、通常挙動は不変（異常値のみ最小1stepへ）。
+    """
+    safe_speed = speed if (math.isfinite(speed) and speed >= 0.0) else 0.0
+    safe_duration = duration if (math.isfinite(duration) and duration > 0.0) else _MIN_SLOWDOWN_DURATION
+    traci.vehicle.slowDown(id, safe_speed, safe_duration)
 
 
 def get_veh_road_id(id: str) -> str:
