@@ -10,7 +10,8 @@ import os
 import sys
 
 from utils.traci_wrapper import get_veh_neighbors, get_veh_speed
-from v2.constants import MAX_DECEL, MAX_SPEED, MIN_GAP
+from v2.constants import HOLD_MARGIN, MAX_DECEL, MAX_SPEED, MIN_GAP
+from v2.layer1.priority import EDF
 from v2.layer1.rsu import Assignment
 from v2.layer2.safety import VEH_LENGTH, Safety
 from v2.lc_request import LCRequest
@@ -60,6 +61,8 @@ class Layer2:
                 provider = by_id.get(provider_id) if provider_id is not None else None
                 if provider is not None:
                     Layer2._provider_yield(provider, requester)
+                elif EDF.effective_distance(req) <= HOLD_MARGIN:
+                    Layer2._hold_before_deadline(requester, req)  # 提供車なし＆締切間近: D手前で自力減速・保持（F5）
         return lc_count
 
     @staticmethod
@@ -116,3 +119,23 @@ class Layer2:
         position_diff = required - current_gap
         decel_rate = max(0.0, min(position_diff / required, 0.3))
         return requesting_speed * decel_rate
+
+    @staticmethod
+    def _hold_before_deadline(requester: V2CAV, req: LCRequest) -> None:
+        """挿入できず提供車も無い要求車を、締切位置 D の手前で滑らかに減速・保持する（要求車自身の committed-wait, F5）。
+
+        分岐直前まで巡航して SUMO トポロジー（teleport無効の lane-drop）で急停止するのを避ける挙動品質。EDF の鍵
+        には載せない。D で停止する減速を MAX_DECEL 上限で slowDown する（dist ≤ HOLD_MARGIN の判定は呼び出し側）。
+        leader が安全車間内に居る場合は control_speed の追従・緊急減速に委ねてスキップする：hold の弱い減速が
+        緊急ブレーキを上書きすると hold 車列で後続が前車へ追突しうるため、先頭車（leader 遠い/無し）だけが hold する。
+        """
+        if requester.speed <= 0:
+            return
+        if requester.leader_distance is not None and requester.leader_distance < requester.safety_gap:
+            return  # leader 近接: control_speed（追従・緊急ブレーキ）に委ねる
+        remaining = req.deadline_pos - req.current_pos  # D までの残距離（要求は road==mainlane の同一フレームで生成）
+        if remaining <= 0:
+            return  # 既に D を越えていれば SUMO トポロジーに任せる
+        needed_decel = (requester.speed**2) / (2 * remaining)  # D で停止するのに要する減速
+        decel = min(needed_decel, abs(MAX_DECEL))  # 物理上限内で滑らかに（超過時は最大減速で best-effort）
+        traci.vehicle.slowDown(requester.id, 0.0, requester.speed / decel)
