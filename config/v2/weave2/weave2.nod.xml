@@ -6,9 +6,9 @@
     <!-- 織込みゾーンの終点。上側へオフランプ(出口車線 lane3)が分岐する -->
     <node id="WeaveEnd" x="400.0" y="0.0" type="priority"/>
     <!-- 本線終点 -->
-    <node id="End" x="460.0" y="0.0" type="dead_end"/>
-    <!-- オンランプ(1車線)の始点。下側から浅い角度で進入 -->
-    <node id="OnRampStart" x="-100.0" y="-6.0" type="dead_end"/>
-    <!-- オフランプ(1車線)の終点。上側へ抜ける -->
-    <node id="ExitEnd" x="550.0" y="40.0" type="dead_end"/>
+    <node id="End" x="464.0" y="0.0" type="dead_end"/>
+    <!-- オンランプ(1車線)の始点。下側から smoothstep で降下し lane0 レベル(-4.8)へ平行進入する -->
+    <node id="OnRampStart" x="-100.0" y="-20.0" type="dead_end"/>
+    <!-- オフランプ(1車線)の終点。lane3 から上へ滑らかに分流し本線と平行(水平)に伸ばす -->
+    <node id="ExitEnd" x="458.0" y="9.8" type="dead_end"/>
 </nodes>
