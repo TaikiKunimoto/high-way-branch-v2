@@ -1,6 +1,6 @@
 <nodes>
     <!-- 本線(2車線)の始点 -->
-    <node id="MainStart" x="-50.0" y="0.0" type="dead_end"/>
+    <node id="MainStart" x="-100.0" y="0.0" type="dead_end"/>
     <!-- 合流ランプが本線に合流する地点（ここから加速車線=下側lane0 が始まる） -->
     <node id="MergeNode" x="0.0" y="0.0" type="priority"/>
     <!-- 本線終点 -->

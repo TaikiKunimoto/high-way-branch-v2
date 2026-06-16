@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on 2026-06-15T20:37:54.304468+09:00 by Eclipse SUMO netconvert 1.27.0
+<!-- generated on 2026-06-16T11:01:19.586455+09:00 by Eclipse SUMO netconvert 1.27.0
 <netconvertConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netconvertConfiguration.xsd">
 
     <input>
@@ -37,8 +37,8 @@
     </edge>
 
     <edge id="MainApproach" from="MainStart" to="MergeNode" priority="10">
-        <lane id="MainApproach_0" index="0" speed="27.78" length="48.50" shape="50.00,10.20 98.50,10.20"/>
-        <lane id="MainApproach_1" index="1" speed="27.78" length="48.50" shape="50.00,13.40 98.50,13.40"/>
+        <lane id="MainApproach_0" index="0" speed="27.78" length="98.50" shape="0.00,10.20 98.50,10.20"/>
+        <lane id="MainApproach_1" index="1" speed="27.78" length="98.50" shape="0.00,13.40 98.50,13.40"/>
     </edge>
     <edge id="MainLane" from="AccelEnd" to="End" priority="10">
         <lane id="MainLane_0" index="0" speed="27.78" length="46.00" shape="304.00,10.20 350.00,10.20"/>
@@ -58,7 +58,7 @@
         <request index="0" response="00" foes="00" cont="0"/>
         <request index="1" response="00" foes="00" cont="0"/>
     </junction>
-    <junction id="MainStart" type="dead_end" x="50.00" y="15.00" incLanes="" intLanes="" shape="50.00,15.00 50.00,8.60"/>
+    <junction id="MainStart" type="dead_end" x="0.00" y="15.00" incLanes="" intLanes="" shape="0.00,15.00 0.00,8.60"/>
     <junction id="MergeNode" type="priority" x="100.00" y="15.00" incLanes="OnRamp_0 MainApproach_0 MainApproach_1" intLanes=":MergeNode_0_0 :MergeNode_1_0 :MergeNode_1_1" shape="101.64,15.00 101.64,5.40 98.64,5.27 98.37,8.46 98.50,8.60 98.50,15.00">
         <request index="0" response="000" foes="000" cont="0"/>
         <request index="1" response="000" foes="000" cont="0"/>
