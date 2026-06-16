@@ -10,4 +10,8 @@
     <route id="r_exit_b" edges="MainApproach WeaveZone OffRampBottom"/>
     <!-- 分流(上): 本線 → 織込みゾーン → 出口車線 lane3 → 上側オフランプ（本線→lane3 へ必須LC） -->
     <route id="r_exit_t" edges="MainApproach WeaveZone OffRampTop"/>
+    <!-- 対角(下→上): 下側オンランプ → 加速車線 lane0 → 対角の出口車線 lane3 → 上側オフランプ（lane0→lane3 へ3車線必須LC＝織込みの本体） -->
+    <route id="r_cross_bt" edges="OnRampBottom WeaveZone OffRampTop"/>
+    <!-- 対角(上→下): 上側オンランプ → 加速車線 lane3 → 対角の出口車線 lane0 → 下側オフランプ（lane3→lane0 へ3車線必須LC） -->
+    <route id="r_cross_tb" edges="OnRampTop WeaveZone OffRampBottom"/>
 </routes>
