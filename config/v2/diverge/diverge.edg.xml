@@ -1,10 +1,8 @@
 <edges>
-    <!-- 本線2車線。ramps.guess がこの末尾 200m に減速車線(下側lane0)を付与し、
-         MainApproach(2車線=独立approach) と MainApproach-AddedOffRampEdge(3車線=減速/分流ゾーン) に分割する。
-         ビルドスクリプトで後者を DivergeZone にリネームする。 -->
-    <edge id="MainApproach" from="MainStart" to="DivergeNode" numLanes="2" speed="27.78" priority="10"/>
-    <!-- 分岐後の本線2車線（tail） -->
-    <edge id="MainLane" from="DivergeNode" to="End" numLanes="2" speed="27.78" priority="10"/>
-    <!-- 出口ランプ1車線（低優先度。ramps.guess が off-ramp と認識し減速車線を生成する） -->
-    <edge id="ExitRamp" from="DivergeNode" to="ExitEnd" numLanes="1" speed="27.78" priority="1"/>
+    <edge id="DivergeZone" from="MainStart" to="DivergeStart" numLanes="3" speed="27.78" priority="10"/>
+    <edge id="MainLane" from="DivergeStart" to="End" numLanes="3" speed="27.78" priority="10"/>
+    <!-- 分流を滑らかに: smoothstep の多点カーブで lane0(水平)に接して降下し ~20m で水平 -11.4 に漸近
+         (MainLane と平行)、その後 ExitEnd まで水平。旧版の一点折れ(43°ハード)を解消し最大勾配~31°に。 -->
+    <edge id="ExitRamp" from="DivergeStart" to="ExitEnd" numLanes="1" speed="27.78" priority="1"
+          shape="0.00,0.00 3.33,-0.84 6.67,-2.96 10.00,-5.70 13.33,-8.44 16.67,-10.56 20.00,-11.40 72.00,-11.40"/>
 </edges>
