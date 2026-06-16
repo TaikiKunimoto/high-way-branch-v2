@@ -12,3 +12,4 @@ Claude Code の永続メモリ。このディレクトリは git 管理され、
 - [想定外入力は即raise](raise-on-unexpected-input.md) — 境界で検証し受け取った値つきで明示エラー
 - [class主体の構成](class-centric-organization.md) — 操作別関数モジュールでなく意味を持つclass＋class/staticmethod
 - [日本語で連絡](japanese-for-user-communication.md) — ユーザーへの問いかけ・進捗報告は日本語で
+- [v1は今後不使用](v1-frozen-no-longer-used.md) — v1凍結／golden full再採取は不要（PR#32でスキップ）
