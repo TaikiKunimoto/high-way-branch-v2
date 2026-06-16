@@ -204,7 +204,7 @@
 
 `R`（既定 50.0）、`HOLD_MARGIN`（旧 `Θ_FORCE`。Dへの滑らかな減速・待機の距離閾値・M/B/D 別 → §6 F5、機構は実装済みだが値は未確定）、`δ`（`DELAY` 既定 0.0）、`G_req` 係数（速度差正規化 → §6 F2）、`Tc`（`TC` 既定 0.1s＝TIME_STEP）、活性化マージン（`ACTIVATION_MARGIN` 既定 400.0）。
 
-> **〔重要・env総改修に伴う再較正〕** 距離系の margin（`ACTIVATION_MARGIN=400`・`R=50`・`HOLD_MARGIN=100`）は**旧ジオメトリ（D≈2500）前提**で、env 再設計（#31/#34/#35/#36/#37）で締切区間が大幅短縮（**diverge D=94・merge D=194** 等）したため**不釣り合い**になっている（例: `ACTIVATION_MARGIN=400`・`HOLD_MARGIN=100` がいずれも D=94 を超え、区間全体で活性化/hold が発火）。新ジオメトリ確定後に margin 群を一括再較正すること（絶対値かD比率か、シナリオ別かを含めて決定）。
+> **〔重要・env総改修に伴う再較正〕** 距離系の margin（`ACTIVATION_MARGIN=400`・`R=50`・`HOLD_MARGIN=100`）は**旧ジオメトリ（D≈2500）前提**で設定された。env 再設計（#31〜#45）後の確定 D は **diverge=1000・merge=194・weave=196・weave2=392**。`HOLD_MARGIN=100` は全 D 未満で機能する（F5 で検証済み、§6 F5 参照）が、`ACTIVATION_MARGIN=400` は merge/weave の D を超え区間全体で活性化する。評価フェーズで margin 群を一括再較正すること（絶対値かD比率か、シナリオ別かを含めて決定）。
 
 ---
 
@@ -217,7 +217,7 @@
 | **F1** | 追従の安全車間δ統一 | ✅ 実装済み（PR #27 merged） |
 | **F3** | 締切達成率メトリクス | ✅ 実装済み（PR #28 merged） |
 | **F4** | 車両物理の統一（MAX_ACCEL=2.6・minGap=2.8） | 🔵 実装中（PR #32） |
-| **F5** | HOLD_MARGIN（D手前で滑らか減速・保持） | ✅ 実装（本PR） |
+| **F5** | 必須LC完走支援: 自己減速で挿入＋D手前 hold で行き止まり防止 | 🔵 実装（PR #48・combined） |
 | **F2** | 挿入判定の必要車間式の整理 | 🔁 #33 で対象コードが変化＝再スコープ |
 | **R1** | スロット確保(committed)の明示化 | ❌ 取り下げ（#33 で主動機消滅） |
 | **R2** | 挿入判定を最近傍2台へ簡素化 | ❌ 取り下げ（#33 が getNeighbors で吸収） |
@@ -252,11 +252,13 @@
     - 併せて確認: decel は SUMO既定 4.5（快適）/ emergencyDecel 9 に対し v2 は `MAX_DECEL=-5.0`。加速だけ揃えて減速前提がずれないか。**2.0 / 2.6 / 3.0 の感度分析を一度実施**（指標悪化が「実力」か「上限低下の副作用」かを切り分け）。
     - 出典: SUMO Vehicle Type Parameter Defaults / Treiber–Hennecke–Helbing 2000 / traffic-simulation.de / MDPI Future Transportation 2026 ほか（調査ログ `tasks/w8je7ow3e`）。
 
-- **F5: 枠なし要求車の「Dへ向けた滑らかな減速・待機」挙動** ⏸️ 実装済み(WIP)・**env総改修の完了まで保留**（旧称 Θ_force）〔旧 相違#5〕
-  - 機構: #33 後の `pair_executor.execute_pairs`「挿入不可かつ提供車なし」分岐に、実効距離 `dist = EDF.effective_distance(req) ≤ HOLD_MARGIN` で `_hold_before_deadline`（D で停止する減速を MAX_DECEL 上限で slowDown）を追加。EDF 鍵には載せない。`HOLD_MARGIN` を `constants.py` に追加（`ACTIVATION_MARGIN` と対の「Dからの距離マージン」、暫定100m）。branch `feat/v2-hold-margin`（未マージ）。
-  - **保留理由①（要修正・critical）**: `_hold_before_deadline` が**前方車(leader)を見ず**、`control_speed` の後に走るため `setSpeedMode(0)` 下で**緊急ブレーキを上書き**する。hold 車が列をなすと後続 hold 車が前車に追突しうる（レビューで確認）。→ 減速を leader gap で下限クランプ、または leader が近い時は hold をスキップして control_speed に委ねる修正が必須。
-  - **保留理由②（チューニング）**: env 総改修（#31/#34/#35/#36/#37）で締切区間が短縮（diverge **D=94**・merge **D=194** 等）。`HOLD_MARGIN=100 > D` だと hold がスタート地点から全区間発火する。HOLD_MARGIN はジオメトリ依存＝**env 確定後に再設定**（シナリオ別か D 比率か要決定）。27m/s から MAX_DECEL=5 で滑らか停止に約73m 要る点も短区間では余裕が乏しい。
-  - 再開時: ①leader尊重の修正 → ②env確定後に HOLD_MARGIN 較正 → 検証（急停止・追突なし／締切達成率 改善 or 不変）。
+- **F5: 必須LC完走支援（自己減速で挿入＋D手前 hold で行き止まり防止）** 🔵 実装（PR #48・combined）。env 総改修（#31〜#45）完了で保留解除して再開（旧称 Θ_force）〔旧 相違#5〕
+  - **調査で判明した基本アルゴリズムの問題**: 要求車が**最高速のまま一切減速しない**ため、低速・混雑した目標レーンへ挿入できない（`_insertion_safe_live` は速度差比例で必要ギャップが増えるので、物理ギャップがあっても「速すぎて入れない」）。協調（提供車）は**後方車にしか頼めず**（`_find_provider` は `lane_pos < pos` のみ）、後方に開くギャップに要求車自身が落ちて入ることもできない。weave の2段分流(lane2→1→0)で特に顕在化し挿入不可のまま末端で急停止（veh159 を逐次トレースで機序確定）。
+  - **機構①（挿入の成立）self-decel** `pair_executor._requester_match_target_speed`: safe gap が無い要求車が、目標レーン先行の速度まで**自分も減速**して速度差を縮め、既存ギャップへ滑り込む。提供車の後方ギャップ開けと相補的。
+  - **機構②（最終手段の安全網）F5 hold** `_hold_before_deadline`: 締切間近 `dist = EDF.effective_distance(req) ≤ HOLD_MARGIN` でなお挿入不可なら、D 手前で滑らかに停止し**行き止まり(lane-drop)の急停止を防ぐ**＋D で待って入る猶予を作る。`HOLD_MARGIN` を `constants.py` に追加（暫定100m・評価で確定）。EDF 鍵には載せない。
+  - **leader 尊重（旧 保留理由①を解消）**: 両機構とも own leader が `safety_gap` 内ならスキップし control_speed に委ねる（弱い減速指令が `setSpeedMode(0)` 下で緊急ブレーキを上書きし、減速/hold 車列で後続が追突するのを防ぐ）。
+  - **検証（v2 smoke 全5環境 Q1200/f0.3・逐次/決定的・seed42、F5-off=main #45 と同一物理で比較）**: combined は**全環境で締切100%・行き止まり急停止0・衝突0**（merge 56→59/e18→0・weave 56→59/e51→0・weave2 55→57/e6→0・diverge 37/37・straight 0/0）。内訳: F5 単独で merge/weave2 を満点化、self-decel 追加で weave(2段分流)も59/59。**測定は逐次**（並列バッチは SUMO/traci 同時起動で稀に乱れるため不採用）。
+  - **残課題（評価で確定）**: `HOLD_MARGIN`・self-decel 目標速度は単一 seed/負荷での確認。複数 seed・負荷掃引での頑健性確認は評価フェーズ。（旧 保留理由②の「`HOLD_MARGIN`=100 > D で全区間発火」は新ジオメトリ＝diverge **D=1000**/merge D=194/weave D=196/weave2 D=392 がいずれも 100 超で解消、かつ combined で吸収）。
 
 ### リファクタ（R）— いずれも #33 で取り下げ
 
